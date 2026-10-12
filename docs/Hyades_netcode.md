@@ -18,6 +18,13 @@ with capped ingress (§3.2); the server now has no game data plane at all (§10)
 new §3.2.1 split between weighted **observer seats** (overlay members) and unweighted
 **spectators** (gossip tier).*
 
+*Pending amendment: `Hyades_sessions_discovery_and_security.md` (Rev 1;
+rulings 1–10 ratified, among them relay-only seats, the rest OPEN) proposes replacing §10's lobby, signaling and TURN services with a static
+site and public rendezvous, withdrawing TURN (§3.3), and narrowing §8.3's
+"identifiable" claim — censorship by timeout is not identifiable from one
+transcript. Its §9 lists every section affected. Until the author ratifies
+those R-codes, this spec stands as written.*
+
 ---
 
 > ## Engine status — implementation blockers, audited against the tree

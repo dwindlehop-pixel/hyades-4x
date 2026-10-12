@@ -394,7 +394,7 @@ world. **R-IND8 — open**, and it is the join with Warfare.
 
 - `Hyades_industry.md` §1 (the stock), §3 (the ramp), §5 (works and colors),
   §6 (the layering algebra and the whole measurement branch)
-- `Hyades_experiments_appendix.md` §A, §B — the measurement record
+- `docs/experiments/` §A, §B — the measurement record
 - `Hyades_mineral_cost_curve.md` §2.3 (the shell model), §2.6 (the Band ladder)
 - `Hyades_trees_and_card_value.md` §2.3.4 (fleet-years), §3.2 (saturation first),
   §4.3 (the dispersion constraint)

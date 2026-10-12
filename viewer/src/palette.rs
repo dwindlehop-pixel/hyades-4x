@@ -398,7 +398,7 @@ pub enum Status {
     Combat,
     /// The inspector's selection.
     Selected,
-    /// Heading home off its mission (T-164): the count of a place's
+    /// Heading home off its mission (T-172): the count of a place's
     /// retreating hulls.
     Retreat,
 }
@@ -414,7 +414,7 @@ pub const STATUS: [(Status, &str); 10] = [
     (Status::Combat, "#ff4fe1"),
     (Status::Selected, "#f2fff6"),
     // OKLCH L 0.88, C 0.16, 25° clamped to sRGB: the point farthest from every
-    // other status, the materials, the seats and the text (T-164).
+    // other status, the materials, the seats and the text (T-172).
     (Status::Retreat, "#ffaba1"),
 ];
 
@@ -576,7 +576,7 @@ mod tests {
     }
 
     /// **The retreat count's color is no seat's, no material's and not the
-    /// count's own** (T-164).
+    /// count's own** (T-172).
     #[test]
     fn the_retreat_count_reads_apart_from_seats_materials_and_the_count() {
         let p = Palette::default();

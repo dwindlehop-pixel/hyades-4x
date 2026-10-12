@@ -15,8 +15,11 @@ license = "Apache-2.0"
 # The replay viewer (docs/Hyades_interface.md) is its own crate: it reads the
 # replay format and nothing else, so the presentation cannot reach the
 # simulation (design law #15). Also dependency-free.
+# The networking crate (net/, docs/Hyades_sessions_discovery_and_security.md)
+# links upstream packages, as the interface and networking may (interface
+# ruling 14); it does not link the engine, and the engine links nothing.
 [workspace]
-members = ["viewer"]
+members = ["viewer", "net"]
 
 [lib]
 # crate-type rlib keeps it linkable by the native MC harness AND by a wasm

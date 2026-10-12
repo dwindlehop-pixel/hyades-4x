@@ -442,7 +442,7 @@ pub fn lights(s: &Scene, ops: &[Op]) -> Lights {
             let (sin, cos) = (std::f64::consts::TAU * k as f64 / m as f64).sin_cos();
             let c = if m > 1 { [middle[0] + apart * cos, middle[1] + apart * sin] } else { mean(members) };
             // Hulls heading home are their own cluster, in the retreat color
-            // (T-164): the seat's own cluster counts only hulls on their role.
+            // (T-172): the seat's own cluster counts only hulls on their role.
             let color = linear(if *back { s.palette.status(Status::Retreat) } else { s.palette.seat(*seat) });
             let n = members.len();
             let dots = n.min(CLUSTER_MAX_DOTS);

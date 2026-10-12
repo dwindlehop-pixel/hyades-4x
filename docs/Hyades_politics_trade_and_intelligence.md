@@ -12,7 +12,7 @@ matching engine this builds on), `Hyades_standing_layer_and_observation.md`
 routing sweep, the four faucet/sink models, T-77's settlement census, the
 400-planet screen that was wrong twice, the stage plan that predicted the wrong
 risky stage, and the guard that turned out inverted — is in
-**`Hyades_experiments_appendix.md` §B**, linked per decision.
+**`docs/experiments/` §B**, linked per decision.
 
 **Rev 1 was labeled "proposed for ratification" and much of it still is.** Rev 2
 marks each item's status explicitly rather than leaving it to the prose, because
@@ -808,7 +808,7 @@ bed before anything switches on.**
 ## References
 
 **Internal**
-- `Hyades_experiments_appendix.md` §B — the measurement record behind every
+- `docs/experiments/` §B — the measurement record behind every
   ratified item above
 - `Hyades_matching.md` — the matching engine this builds on; `src/matching.rs`
 - `Hyades_industry.md` §8.1 (refined mass traverses real space), §6.10 (the works

@@ -56,8 +56,12 @@ function route() {
   const params = new URLSearchParams(location.search);
   const replay = params.get("replay");
   if (replay) return { screen: "viewer", replay };
+  // A room link (docs/Hyades_sessions_discovery_and_security.md §5.1) is
+  // #j=<payload>: it opens the New game screen on that room.
+  const link = new URLSearchParams(location.hash.slice(1)).get("j");
+  if (link) return { screen: "new", link };
   const view = params.get("view");
-  return { screen: ["replays", "palette"].includes(view) ? view : "menu" };
+  return { screen: ["replays", "palette", "new"].includes(view) ? view : "menu" };
 }
 
 function go(search) {
@@ -67,8 +71,11 @@ function go(search) {
   show(route());
 }
 
-function show({ screen, replay }) {
+function show({ screen, replay, link }) {
   document.body.dataset.screen = screen;
+  // The networking module loads only when this screen opens, so a replay
+  // viewer never fetches it.
+  if (screen === "new") import("./newgame.js").then((m) => m.enterNew(link));
   if (screen === "palette") buildSheet();
   if (screen === "replays") buildReplayList();
   if (screen === "viewer") {
@@ -80,6 +87,7 @@ function show({ screen, replay }) {
 
 window.addEventListener("popstate", () => show(route()));
 document.querySelectorAll(".to-menu").forEach((b) => b.addEventListener("click", () => go("")));
+$("menu-new").addEventListener("click", () => go("?view=new"));
 $("menu-replays").addEventListener("click", () => go("?view=replays"));
 $("menu-palette").addEventListener("click", () => go("?view=palette"));
 
@@ -232,8 +240,10 @@ function setPalette(line) {
   const canonical = text(9);
   tune = readSettings(canonical);
   $("tune-text").value = canonical;
+  // Keep the hash's other keys: a room link rides there too (#j=, newgame.js).
   const url = new URL(location);
-  url.hash = `palette=${encodeURIComponent(canonical)}`;
+  const others = [...new URLSearchParams(url.hash.slice(1))].filter(([k]) => k !== "palette");
+  url.hash = [`palette=${encodeURIComponent(canonical)}`, ...others.map(([k, v]) => `${k}=${encodeURIComponent(v)}`)].join("&");
   history.replaceState(null, "", url);
   applyPalette();
   buildTuner();

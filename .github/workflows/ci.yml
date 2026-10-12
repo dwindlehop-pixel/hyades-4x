@@ -69,10 +69,14 @@ jobs:
       - uses: actions/checkout@v5
       - name: Toolchain
         run: |
-          rustup toolchain install stable --profile minimal --target wasm32-unknown-unknown --no-self-update
+          rustup toolchain install stable --profile minimal --component clippy --target wasm32-unknown-unknown --no-self-update
           rustup default stable
       - name: cargo check (wasm32-unknown-unknown)
         run: cargo check --lib --target wasm32-unknown-unknown --verbose
+      # net/src/web.rs compiles only for wasm32, so the workspace clippy run
+      # never sees it.
+      - name: clippy, hyades-net for wasm32
+        run: cargo clippy -p hyades-net --target wasm32-unknown-unknown -- -D warnings
 
   # The replay viewer (docs/Hyades_interface.md §8): the site Pages deploys,
   # built and opened. smoke.mjs drives the wasm module headless over every
@@ -88,16 +92,22 @@ jobs:
         run: |
           rustup toolchain install stable --profile minimal --target wasm32-unknown-unknown --no-self-update
           rustup default stable
+      - name: wasm-bindgen CLI
+        run: web/install-wasm-bindgen.sh
       - name: Build the site
         run: web/build.sh _site --quick
       - name: Module smoke test
         run: node web/test/smoke.mjs _site/hyades_viewer.wasm _site/replays
       - name: Playwright
-        run: npm install --no-save --no-package-lock playwright@1.56.1
+        run: npm install --no-save --no-package-lock playwright@1.56.1 ws@8.18.3
       - name: Browser test
         env:
           HYADES_CHROME_CHANNEL: chrome
         run: node web/test/browser.mjs _site
+      - name: Relay match (three tabs through a local relay)
+        env:
+          HYADES_CHROME_CHANNEL: chrome
+        run: node web/test/relay-match.mjs _site
 
   # The short drivers, run for real so a panic or a NaN-poisoned sweep fails CI.
   examples:

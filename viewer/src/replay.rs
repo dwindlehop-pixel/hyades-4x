@@ -70,7 +70,7 @@ pub struct Row {
     pub damage: f64,
     pub in_flight: bool,
     pub wrecked: bool,
-    /// Heading home off its mission (T-164): replay flags bit 2.
+    /// Heading home off its mission (T-172): replay flags bit 2.
     pub withdrawing: bool,
     pub dest: Option<u32>,
     pub cargo: f64,
@@ -749,7 +749,7 @@ pub(crate) mod tests {
         assert!(r.frames.iter().flat_map(|f| &f.hex_works).all(|w| !w.band_iv), "no Band IV works in the fixture");
     }
 
-    /// **Flags bit 2 is a hull heading home off its mission** (T-164).
+    /// **Flags bit 2 is a hull heading home off its mission** (T-172).
     #[test]
     fn flags_bit_two_is_heading_home() {
         let row = "[9, 0, 0, 0, 0, 0, 0, 0, 0.5, 1, 0, 1, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]";

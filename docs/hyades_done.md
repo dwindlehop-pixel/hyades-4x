@@ -5,7 +5,7 @@ Band A of `docs/hyades_todo.md` so that Band A lists only work that is ready to
 build and not yet done. Each entry is moved **verbatim**, in the order it held in
 Band A; its `T-nn` is permanent and is not reused (the register's own rule).
 Nothing here is normative: the decisions an entry produced live in the spec it
-cites, and its measurements in `docs/Hyades_experiments_appendix.md`.
+cites, and its measurements in `docs/experiments/`.
 
 **Where the open work went.** An entry here may name questions it left open.
 They are not open here — each one lives in a spec's register or as its own
@@ -24,6 +24,7 @@ row below, and leave its code in the Band A pointer line of
 
 | code | status | open follow-ups, and where they live |
 |---|---|---|
+| **T-168** | Built: the experiments appendix is the directory `docs/experiments/` — a table of contents mapping every entry identifier to its file, an `AGENTS.md` on organization, size (≤ ~50k tokens per Markdown file) and data, §A–§C as files and §D split into nine subject files; identifiers unchanged, every entry moved whole | — |
 | **T-154** | Built: seats off every material's hue, platinum apex, positions to 0.0001 ly, Hermite interpolation | R-UI1 — `Hyades_interface.md` §9; the `beams` setup and the picket under-fire rule are put to the author |
 | **T-153** | Built: armed bodies solid and unarmed hollow; a 3×3 mark per role; a glyph legend from the module | R-UI3 — `Hyades_interface.md` §9 |
 | **T-152** | Built: glyphs only where their hulls stand, a display order, routes, holdings by material (Band bars), colonies by seat color, quiet traffic, cargo stripes | R-UI4 — `Hyades_interface.md` §9 |
@@ -152,7 +153,7 @@ description of the change.
 
 ## Entries moved from Band A
 
-### T-166. Stacks are places of overlapping footprints, so counts never overlap
+### T-171. Stacks are places of overlapping footprints, so counts never overlap
 
 *Opened and built in one landing at the author's report: "There needs to be a
 zoom-based proximity threshold for determining a stack. Right now the beams
@@ -167,7 +168,10 @@ over another place fell 6,050 → 0 (`beams`) and 714 → 0 (`sentries`), and
 zoom-in steps that merged places 77 → 1 and 60 → 2 (`Hyades_interface.md`
 ruling 30, §6.4, §7.1; appendix §D.59).
 
-### T-165. A workflow for root-causing and fixing Design and Doctrine changes
+### T-170. A workflow for root-causing and fixing Design and Doctrine changes
+
+*Landed as T-165 in #26, which `main` had used for the engine as a browser
+module; renumbered at T-171 so each code names one thing.*
 
 *Opened and built in one landing at the author's request: "generalize the
 effort to debug the behavior and performance cost of settling hauling routes
@@ -179,7 +183,10 @@ did, bed and census, arms, read, root cause, confirmation with a coordination
 census, cost, landing and record. `AGENTS.md` §6 and the card workflow point
 to it. No engine change.
 
-### T-164. Counts are of hulls on their role; retreat apart; no wrecks
+### T-172. Counts are of hulls on their role; retreat apart; no wrecks
+
+*Landed as T-164 in #26, which `main` had used for the sessions spec;
+renumbered at T-171 so each code names one thing.*
 
 *Opened and built in one landing at the author's ruling: "Only count hulls
 that are still embarking on their primary role. If autopilot decides to

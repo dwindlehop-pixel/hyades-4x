@@ -120,7 +120,7 @@ pub enum Op {
         /// the place's first hull: one value on every hull of a place.
         site: usize,
         /// On the glyph drawn on top in its place, the place's counts drawn
-        /// beside it (T-164): hulls still on their role, and hulls heading
+        /// beside it (T-172): hulls still on their role, and hulls heading
         /// home off it. A wreck is in neither.
         counts: (u32, u32),
         /// Drawn as a marker, a square in the seat's color sized by count: one
@@ -366,7 +366,7 @@ pub fn footprint(lod: Lod, size: Size, quiet: bool, wrecked: bool) -> [i64; 4] {
     [left, -edge, right, edge]
 }
 
-/// **Places** (§6.4, the author's ruling, T-166): hulls whose
+/// **Places** (§6.4, the author's ruling, T-171): hulls whose
 /// [footprints](footprint) overlap on screen are one place, joined
 /// transitively. The reach is in tactical pixels, so in light-years it
 /// shrinks as the view zooms in — a fight parts into its hulls, a galaxy
@@ -432,7 +432,7 @@ fn stack(ops: &mut [Op], s: &Scene) {
     // At the galaxy level a group is one owner's armed or unarmed hulls in a
     // place; below it, one owner's hulls of one Design, role, wreck state and
     // quietness.
-    // A wreck is never stacked with a live hull, at any level (T-164).
+    // A wreck is never stacked with a live hull, at any level (T-172).
     type Group = (usize, usize, bool, bool, Option<(GlyphKey, usize, bool)>);
     let mut groups: BTreeMap<Group, Vec<usize>> = BTreeMap::new();
     for (i, h) in s.view.hulls.iter().enumerate() {
@@ -703,7 +703,7 @@ pub fn paint_with(s: &Scene, ops: &[Op], r: &mut Raster, cache: &mut GlyphCache)
             brackets(r, *at, half + 5, pal.status(Status::Selected));
         }
         // The place's counts: hulls on their role, then — in the retreat
-        // color — hulls heading home. Wrecks are in neither (T-164).
+        // color — hulls heading home. Wrecks are in neither (T-172).
         let (on_role, retreating) = *counts;
         let mut x = at[0] + half + COUNT_OFFSET_PX;
         if on_role > 1 || (on_role > 0 && retreating > 0) {
@@ -1298,7 +1298,7 @@ mod tests {
     }
 
     /// **A place counts hulls on their role, and apart from them hulls
-    /// heading home; never a wreck** (T-164, the author's ruling). The two
+    /// heading home; never a wreck** (T-172, the author's ruling). The two
     /// counts are drawn in their own colors, and a galaxy-level marker is
     /// never sized by wrecks.
     #[test]
@@ -1365,7 +1365,7 @@ mod tests {
         view
     }
 
-    /// **Panning a paused view regroups nothing** (T-160, T-166): places
+    /// **Panning a paused view regroups nothing** (T-160, T-171): places
     /// are footprints overlapping in pixels of the galaxy at the view's
     /// scale, not of the screen, so moving the camera by any amount keeps
     /// every stack's members, its drawn glyph and the drawing order. On a
@@ -1425,7 +1425,7 @@ mod tests {
         }
     }
 
-    /// **A place is footprints that overlap, joined transitively** (T-166),
+    /// **A place is footprints that overlap, joined transitively** (T-171),
     /// and only those: boxes are inclusive, so edges in touching columns are
     /// apart, and moving every box alike keeps the partition.
     #[test]
@@ -1441,7 +1441,7 @@ mod tests {
     }
 
     /// **No count is drawn over another place, at any zoom, and zooming in
-    /// only parts places** (T-166, the author's report on `beams`): a lattice
+    /// only parts places** (T-171, the author's report on `beams`): a lattice
     /// of stack squares put hulls a pixel apart in two places when a square's
     /// edge fell between them, each drawing a count over the other's, and
     /// moved its edges as the view zoomed so places merged and parted.

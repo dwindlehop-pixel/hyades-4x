@@ -3,7 +3,7 @@
 The presentation of a Hyades game: how a run leaves the engine, how it is
 played back, and how it is drawn. **This spec carries ratified and open
 decisions only** (`AGENTS.md` §6). The measurements behind it are in
-`docs/Hyades_experiments_appendix.md` §D.58.
+`docs/experiments/` §D.58.
 
 Status key: **RATIFIED** — the author's ruling; **BUILT** — implemented to a
 ratified decision; **OPEN** — a decision not yet made, with a recommendation
@@ -114,13 +114,13 @@ RATIFIED (T-161 – T-163, the author's rulings):
 28. **Panning a paused tactical view changes no glyph** — not its size, its
     order, or its shape (§6.4; the bug report behind T-160).
 
-RATIFIED (T-164, the author's ruling):
+RATIFIED (T-172, the author's ruling):
 
 29. **A count counts only hulls still on their primary role.** A hull the
     autopilot has sent home is counted apart, in a distinct color; a wreck is
     in no count (§6.4, §7.1).
 
-RATIFIED (T-166, the author's ruling):
+RATIFIED (T-171, the author's ruling):
 
 30. **Whether hulls are one stack is a proximity threshold that follows the
     zoom**, so counts never sit on top of each other at any zoom (§6.4; the
@@ -166,7 +166,7 @@ breaking it.
 | `enums` | `kind` (role), `hull` (the docs' codes, LSV … GOU), `design` (the class names, Meadow … Unnamed), `category` (log categories), `material` (the eight on the Exchange's books: Cyan, Magenta, Yellow, Red, Green, Blue, Apex, Ordnance) |
 | `planet_fields`, `planets` | static per world: `id, x, y, z, hab, bio_max, cyan, magenta, yellow, home` — Bands |
 | `frame_planet_fields` | per world per frame: `owner` (−1 none), `pop`, `works` — Bands — and `works_kt`, works as a mass, kt to four significant figures (T-159): masses add across worlds where Band readings do not |
-| `vehicle_fields` | per hull per frame (positions, of hulls and of worlds, to 4 decimals of a light year since T-154 — at 2, a fight moved in 0.01-ly steps): `id, kind, x, y, z, vx, vy, vz, accel, burn, damage, flags, dest, cargo, settlers, cargo_cyan … cargo_ordnance` — ly, ly/yr, ly/yr², burn ∈ {−1, 0, +1}, damage as a share of structure, flags bit 0 in flight, bit 1 wrecked and bit 2 heading home off its mission (T-164: withdrawn under fire and not yet home), dest a world id or −1, cargo and settlers kt, then the cargo by material, kt, to four significant figures (T-152) |
+| `vehicle_fields` | per hull per frame (positions, of hulls and of worlds, to 4 decimals of a light year since T-154 — at 2, a fight moved in 0.01-ly steps): `id, kind, x, y, z, vx, vy, vz, accel, burn, damage, flags, dest, cargo, settlers, cargo_cyan … cargo_ordnance` — ly, ly/yr, ly/yr², burn ∈ {−1, 0, +1}, damage as a share of structure, flags bit 0 in flight, bit 1 wrecked and bit 2 heading home off its mission (T-172: withdrawn under fire and not yet home), dest a world id or −1, cargo and settlers kt, then the cargo by material, kt, to four significant figures (T-152) |
 | `holding_fields` | per holding per frame: `planet, seat, cyan … ordnance` — each material a **Band reading on the cost ladder** (a holding is a stock that can be spent), `null` where none of it is held (T-152) |
 | `frames` | `{t, owner[], pop[], works[], vehicles[[…]], holdings[[…]]}` — `holdings` lists every non-empty holding, an empire's at worlds it owns and at rocks it only mines, by planet and then seat |
 | `hull_fields`, `hulls` | static per hull: `id, owner, hull, design, beams, tubes, wrecked_at` — written once, after the frames; `wrecked_at` the year it was wrecked to six decimals, or `null` (T-158) |
@@ -327,7 +327,7 @@ and reads at 3:1 on the ground (`status_colors_sit_off_the_palette_apart_and_leg
 | Laden | `#fff36b` | the fill of a laden hull whose replay does not carry its cargo by material |
 | Combat | `#ff4fe1` | the log's combat rows |
 | Selected | `#f2fff6` | the selection's corner brackets |
-| Retreat | `#ffaba1` | the count of a place's hulls heading home, and their juicy cluster (T-164): OKLCH L 0.88, C 0.16, 25° clamped to sRGB, the point farthest from every other status, the materials, the seats and the text |
+| Retreat | `#ffaba1` | the count of a place's hulls heading home, and their juicy cluster (T-172): OKLCH L 0.88, C 0.16, 25° clamped to sRGB, the point farthest from every other status, the materials, the seats and the text |
 
 **Materials** are drawn in the palette's own hue of their names — Cyan
 `hy_cyan`, Magenta `hy_magenta`, Yellow `hy_yellow`, Red `hy_red`, Green
@@ -372,7 +372,7 @@ decides which is drawn on top. The fan this replaced is in appendix §D.58.6.
 
 Proposed and built, every magnitude a *placeholder*:
 
-- **Places** — RATIFIED (ruling 30, T-166): **hulls whose footprints overlap
+- **Places** — RATIFIED (ruling 30, T-171): **hulls whose footprints overlap
   on screen are one place**, joined transitively (`tactical::places`). A
   footprint (`tactical::footprint`) is measured in tactical pixels about the
   hull's own pixel: below the galaxy level, its glyph with the damage bar to
@@ -392,8 +392,8 @@ Proposed and built, every magnitude a *placeholder*:
   stands. The glyph carries the worst damage, any hit, the sum of its
   members' cargo and any selection. **A wreck never stacks with a live hull,
   at any level**, so a galaxy-level marker is sized by live hulls alone
-  (T-164).
-- **A place's counts** — RATIFIED (ruling 29, T-164): beside the glyph drawn
+  (T-172).
+- **A place's counts** — RATIFIED (ruling 29, T-172): beside the glyph drawn
   on top of a place, the number of its hulls **still on their role**, in the
   bright text color, then the number **heading home** in the retreat color
   (`Status::Retreat`); a wreck is in neither. The first is drawn when it is
@@ -612,15 +612,17 @@ The site is one page, the game client, showing **one screen at a time**
 
 | screen | what it holds | link |
 |---|---|---|
-| **Menu** | New game (shown, not built yet), Replays, Palette | `./` |
+| **Menu** | New game, Replays, Palette | `./` |
+| **New game** | the relay test (T-169): make a link, open one, Open games, the room, the match, the relays and the log; saves the diagnostics and the match record (`docs/Hyades_sessions_discovery_and_security.md` §11) | `?view=new`, or a room link `#j=<payload>` |
 | **Replays** | the recorded replays at this commit, and "Open a replay file…" | `?view=replays` |
 | **Palette** | the palette sheet (§6.2) | `?view=palette` |
 | **Viewer** | one replay, with a back button to the menu (and Esc) | `?replay=<name>` |
 
 The browser's back and forward buttons move between screens. The palette's
 settings ride in the link's hash on every screen (§6.2.1), so a tuned palette
-survives moving between them. The former `palette.html` forwards to the
-Palette screen with its hash.
+survives moving between them; the palette writes its own key and keeps the
+hash's others, because a room link rides there too (`#j=`). The former
+`palette.html` forwards to the Palette screen with its hash.
 
 ### 8.2 Layout
 
@@ -666,9 +668,18 @@ Pixel 7 emulation that the theater is at least 60% of the screen's height
   `hv_*`) takes and returns numbers; bytes cross through one input buffer, the
   framebuffer and one text buffer. **Everything the page shows as text is
   formatted by the module.**
+- **`net/`** — `hyades-net`, Rust with upstream packages (ruling 14), the
+  sessions spec's transport as a state machine plus a `wasm-bindgen` layer
+  (R-UI8's first use of it). It does not link the engine. Built by
+  `web/build.sh` into `net/` beside the page; the `wasm-bindgen` CLI must match
+  `net/Cargo.toml`'s exact pin (`web/install-wasm-bindgen.sh` installs it).
 - **`web/`** — `index.html` (the client's screens), `style.css`, `shell.js`
   (screens and the link, input, layout, the log as a virtual list), `gpu.js`
-  (§7.3), and `palette.html`, which forwards to the Palette screen. The page
+  (§7.3), `newgame.js` (the New game screen; loaded only when that screen
+  opens, so the replay viewer never fetches the networking module), and
+  `palette.html`, which forwards to the Palette screen. A
+  Content-Security-Policy meta tag pins scripts to the site and connections to
+  the pinned relays and loopback (sessions spec §4.5 rule 2, §8). The page
   chrome takes its colors from the module's palette, so chrome and canvas
   cannot differ.
 - **Controls**: play forward/pause, play backward/pause (§8.3), step, a rate multiplier, a scrubber, and
@@ -692,7 +703,9 @@ Palette screen, follows the old `palette.html` link, serves one 503 and checks
 the replay loads on the second request, loses the WebGL context and checks
 the CPU renderer draws and a click still selects, and on a Pixel 7 emulation checks the
 theater's size, that nothing scrolls sideways, and that a tap beside a drawn
-hull selects it.
+hull selects it. `web/test/relay-match.mjs` runs a loopback Nostr relay that
+rate-limits writes with a backoff hint, and plays a three-seat match in three
+headless tabs through the New game screen (sessions spec §11).
 
 **Deployment**: `.github/workflows/pages.yml` builds and tests the site on
 every push to `main` and publishes it to GitHub Pages. The repository's Pages
@@ -712,7 +725,7 @@ job runs the same build and tests on every pull request.
 | **R-UI5** | watching a game live (§2) | OPEN — recommendation attached | a decision to run the engine in the browser; the recorder's API already takes a running `Simulation` |
 | **R-UI6** | replay size (§3) | OPEN — recommendation attached | the first replay the author wants to keep that passes ~50 MB |
 | **R-UI7** | showing height `z` in the galaxy view (§6.1) | OPEN | the author's ruling on whether the view stays top-down |
-| **R-UI8** | which upstream packages the interface takes up now that it may (ruling 14) | OPEN — recommendation attached | a need the current code cannot meet. Recommendation: none yet; the first candidates are `wasm-bindgen`/`web-sys` (to retire the hand-written C interface and `shell.js`'s byte copying) and `wgpu` (to move `gpu.js` into Rust), each taken when a change would otherwise be built on the hand-rolled path |
+| **R-UI8** | which upstream packages the interface takes up now that it may (ruling 14) | OPEN — recommendation attached; `wasm-bindgen`/`web-sys` taken up by `net/` at T-169 (the author's choice), the viewer still on its C interface | a need the current code cannot meet. Recommendation: none yet; the first candidates are `wasm-bindgen`/`web-sys` (to retire the hand-written C interface and `shell.js`'s byte copying) and `wgpu` (to move `gpu.js` into Rust), each taken when a change would otherwise be built on the hand-rolled path |
 | **R-UI9** | the client's phone layout and touch magnitudes: the 760-pixel breakpoint, the sheets, the tap slop and pick radius (§8.2–8.3) | OPEN — proposal built | the author's use of the deployed site on a phone |
 
 ## References

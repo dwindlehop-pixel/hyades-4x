@@ -3,6 +3,9 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<!-- The pinned origins (docs/Hyades_sessions_discovery_and_security.md §4.5 rule 2): the page
+     reaches the relays in web/newgame.js and nothing else. Loopback is for a relay on this machine. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; img-src 'self' data: blob:; object-src 'none'; base-uri 'none'; form-action 'none'; connect-src 'self' wss://relay.damus.io https://relay.damus.io wss://nos.lol https://nos.lol wss://relay.primal.net https://relay.primal.net wss://nostr.mom https://nostr.mom wss://offchain.pub https://offchain.pub ws://127.0.0.1:* http://127.0.0.1:* ws://localhost:* http://localhost:*">
 <title>Hyades</title>
 <link rel="icon" href="data:,">
 <link rel="stylesheet" href="style.css">
@@ -15,10 +18,71 @@
 <section id="screen-menu" class="screen page">
   <h1 class="title">Hyades</h1>
   <nav class="menu" aria-label="Main menu">
-    <button id="menu-new" disabled title="Not built yet">New game <span class="dim">— not built yet</span></button>
+    <button id="menu-new">New game <span class="dim">— the relay test</span></button>
     <button id="menu-replays">Replays</button>
     <button id="menu-palette">Palette</button>
   </nav>
+</section>
+
+<section id="screen-new" class="screen page">
+  <div class="bar"><button class="to-menu">← Menu</button><h1>New game</h1></div>
+  <p class="note">This is the relay test (T-169). Seats play rounds of hidden orders — commit, reveal, timeout votes,
+    checkpoints — through public Nostr relays, and every relay reply is logged. No galaxy is simulated yet: an order is
+    a card number, and a checkpoint is the hash of the orders every seat played. Nothing here reveals your network
+    address to other players (docs/Hyades_sessions_discovery_and_security.md §4.4).</p>
+  <p id="net-status" class="status">Starting…</p>
+  <div class="form">
+    <label>Your name <input id="f-name" maxlength="24" value="player" autocomplete="nickname"></label>
+  </div>
+
+  <div id="new-start">
+    <h2>Play with a link</h2>
+    <form id="create-form" class="form">
+      <label>Seats <input id="f-seats" type="number" min="2" max="18" value="6"></label>
+      <label>Seconds per round <input id="f-round" type="number" min="1" max="3600" value="180"></label>
+      <label>Rounds <input id="f-rounds" type="number" min="1" max="60" value="10"></label>
+      <label>Patience, seconds <input id="f-patience" type="number" min="1" max="3600" value="120"></label>
+      <label class="check"><input id="f-public" type="checkbox"> List it in Open games</label>
+      <button type="submit" id="create">Make a link</button>
+    </form>
+    <h2>Join with a link</h2>
+    <form id="join-form" class="form">
+      <label class="wide">Link <input id="f-link" placeholder="https://…#j=…" spellcheck="false"></label>
+      <button type="submit" id="open">Open</button>
+    </form>
+    <h2>Open games</h2>
+    <ul id="open-list" class="list"></ul>
+    <p id="open-empty" class="dim">No open games are listed right now. Make one with “List it in Open games”.</p>
+  </div>
+
+  <div id="new-room" hidden>
+    <div id="room-head" class="status"></div>
+    <div id="room-actions" class="row"></div>
+    <h2>Seats</h2>
+    <ol id="room-seats" class="people"></ol>
+    <div id="room-queue-box" hidden><h2>Waiting to play</h2><ol id="room-queue" class="people"></ol></div>
+    <div id="match-box" hidden>
+      <h2>Match</h2>
+      <div id="match-head" class="status"></div>
+      <div id="match-order" class="row">
+        <label class="check"><input id="auto" type="checkbox" checked> Play automatically</label>
+        <label>Order <select id="order"></select></label>
+      </div>
+      <table id="match-seats" class="grid-table"></table>
+      <h2>Rounds</h2>
+      <table id="match-history" class="grid-table"></table>
+      <p id="match-alerts" class="error" hidden></p>
+    </div>
+  </div>
+
+  <h2>Relays</h2>
+  <table id="relay-table" class="grid-table"></table>
+  <div class="row">
+    <button id="export-diag">Save diagnostics (.tsv)</button>
+    <button id="export-record">Save match record (.json)</button>
+  </div>
+  <h2>Log</h2>
+  <pre id="net-log" class="log-box mono"></pre>
 </section>
 
 <section id="screen-replays" class="screen page">

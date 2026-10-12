@@ -1,0 +1,35 @@
+[package]
+name = "hyades-net"
+version = "0.1.0"
+edition = "2021"
+description = "Hyades sessions and transport (docs/Hyades_sessions_discovery_and_security.md): the room and round protocol over Nostr relays, with the rate-limit handling of §4.3.2, as a state machine that does no I/O, plus a wasm-bindgen layer for the browser. It does not link the engine."
+license = "Apache-2.0"
+
+# The networking layer may link upstream packages (docs/Hyades_interface.md
+# ruling 14); the engine may not, and this crate does not link the engine.
+# Versions are pinned to releases at least two weeks old at the time of
+# writing.
+[dependencies]
+base64 = "=0.22.1"
+ed25519-dalek = "=2.1.1"
+k256 = { version = "=0.13.4", default-features = false, features = ["schnorr", "alloc"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "=0.10.8"
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+getrandom = { version = "=0.2.15", features = ["js"] }
+js-sys = "0.3"
+wasm-bindgen = "=0.2.128"
+wasm-bindgen-futures = "0.4"
+web-sys = { version = "0.3", features = [
+  "BinaryType", "CloseEvent", "Crypto", "CryptoKey", "CryptoKeyPair", "Event", "Headers", "Location",
+  "MessageEvent", "Request", "RequestInit", "Response", "SubtleCrypto", "WebSocket", "Window",
+] }
+
+[lib]
+# cdylib is the wasm32 module the client loads; rlib is what `cargo test` links.
+crate-type = ["cdylib", "rlib"]
+
+[lints.clippy]
+disallowed_methods = "allow"

@@ -84,7 +84,7 @@ try {
   await page.goto(`${base}/`);
   await page.waitForFunction(() => window.hyades?.hv(), null, { timeout: 30000 });
   check(await page.evaluate(() => document.body.dataset.screen) === "menu", "the client opens on the menu");
-  check(await page.isDisabled("#menu-new"), "New game is shown and not built yet");
+  check(!(await page.isDisabled("#menu-new")), "New game is enabled (the relay test, web/test/relay-match.mjs)");
   await page.click("#menu-replays");
   await page.click('button[data-replay="sentries"]');
   await page.waitForFunction(() => window.hyades.loaded() === "sentries" && document.getElementById("message").hidden, null, { timeout: 30000 });

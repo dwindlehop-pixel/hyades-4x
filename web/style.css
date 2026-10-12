@@ -57,7 +57,8 @@ button:focus-visible, select:focus-visible, input:focus-visible, canvas:focus-vi
 .screen { display: none; }
 body[data-screen="menu"] #screen-menu,
 body[data-screen="replays"] #screen-replays,
-body[data-screen="palette"] #screen-palette { display: block; }
+body[data-screen="palette"] #screen-palette,
+body[data-screen="new"] #screen-new { display: block; }
 body[data-screen="viewer"] #screen-viewer { display: grid; }
 
 .page { padding: 16px; max-width: 980px; margin: 0 auto; }
@@ -224,3 +225,22 @@ footer { position: relative; border-top: 1px solid var(--grid); min-width: 0; }
   .title { margin-top: 8vh; }
 }
 @media (min-width: 761px) { #badge { display: none; } }
+
+/* The New game screen (docs/Hyades_sessions_discovery_and_security.md §5). */
+.form { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: end; margin-bottom: 10px; }
+.form label { display: grid; gap: 3px; font-size: 13px; color: var(--text-dim); }
+.form label.check, .row label.check { display: flex; gap: 6px; align-items: center; }
+.form label.wide { flex: 1 1 22em; }
+.form input { padding: 6px 8px; min-width: 0; }
+.form input[type="number"] { width: 6.5em; }
+.row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 8px 0; }
+.people { margin: 0 0 8px; padding-left: 1.6em; }
+.people li { margin: 3px 0; }
+.people li button { margin-left: 8px; padding: 2px 8px; }
+.grid-table { border-collapse: collapse; font-size: 12px; display: block; overflow-x: auto; max-width: 100%; }
+.grid-table th, .grid-table td { border: 1px solid var(--grid); padding: 3px 6px; text-align: left; white-space: nowrap; }
+.grid-table th { color: var(--text-dim); font-weight: normal; }
+.ok { color: var(--text-bright); }
+.bad { color: var(--combat); }
+.log-box { max-height: 40vh; overflow: auto; background: var(--panel); border: 1px solid var(--grid); padding: 8px; font-size: 11px; white-space: pre-wrap; overflow-wrap: anywhere; }
+#room-head code { overflow-wrap: anywhere; }
