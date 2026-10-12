@@ -5211,6 +5211,34 @@ drew inside the Cairn cluster. Grouping clusters by screen overlap separated
 them: at t 0.152 yr the 20 Cairns and the remaining Tors draw apart, and at
 0.180 yr the Tor cluster is gone.
 
+**Counts over counts, and places that merged as the view zoomed in (T-166).**
+A scratch probe (not landed) loaded each `--quick` replay, centered the view
+on the mean of its hulls, and swept 41 instants × 31 scales from 200 px/ly up
+by ×1.25 to 1.6e5 px/ly (and from 0.3 px/ly on `expansion`, to cover the
+Galaxy and Sector levels). At each it counted pairs where a drawn count's box
+overlapped another place's glyph or count, and the zoom-in steps where the
+number of drawn places fell. Before the numbers below, two errors in the
+probe were corrected: it gave a count to places that draw none (all wrecks,
+or a quiet hull on top), and it took a digit as four pixels wide, not three.
+
+| replay | square lattice: overlapping pairs / zoom-in drops | overlapping footprints: overlapping pairs / zoom-in drops |
+|---|---|---|
+| `beams` | 6,050 / 77 | 0 / 1 |
+| `sentries` | 714 / 60 | 0 / 2 |
+| `expansion`, from 200 px/ly | 0 / 5 | 0 / 1 |
+| `expansion`, from 0.3 px/ly | 0 / 86 | 0 / 2 |
+
+A first footprint gave a quiet hull its one pixel and left 21 drops on
+`beams`: quiet traffic one pixel apart at a homeworld, whose pixels coincide
+or not as the galaxy rounds at each scale. A footprint of the pixel and the
+ring about it took that to 1. Inference: the drops that remain are the same
+rounding at a footprint's edge, one pixel either way; confidence moderate,
+and printing the places at those steps would test it. At 8,882 px/ly,
+t 0.200 yr, the lattice drew the `beams` stacks' glyphs and counts over one
+another; the footprints draw one place, 7 hulls on their role and 13 heading
+home. The hit ring, radius half body + 4, covered a count's first column
+there before and after the change; the counts now start two pixels later.
+
 ## References
 
 - `AGENTS.md` §2 — how to search, how to read a gradient, the six traps, and the

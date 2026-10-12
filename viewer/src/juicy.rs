@@ -43,7 +43,7 @@ pub const QUIET_HULL: f32 = 0.5;
 /// **A stack below the galaxy level is a cluster** (T-163, proposed, R-UI2):
 /// a dot of radius `CLUSTER_DOT_R` hull radii per hull, `CLUSTER_DOT_SPACING`
 /// hull radii apart in a sunflower spiral, up to `CLUSTER_MAX_DOTS` (more
-/// hulls brighten the dots instead). Seats sharing a stack square stand
+/// hulls brighten the dots instead). Seats sharing a place (§6.4) stand
 /// `CLUSTER_GAP` hull radii apart at their nearest.
 pub const CLUSTER_DOT_R: f64 = 1.0;
 pub const CLUSTER_DOT_SPACING: f64 = 2.0;
@@ -356,17 +356,15 @@ pub fn lights(s: &Scene, ops: &[Op]) -> Lights {
     // Below the galaxy level a stack is a cluster of dots, one per hull, so
     // its count reads and a hit does not hide whose it is (T-163).
     let clustered = s.camera.lod() != Lod::Galaxy;
-    // Keyed by stack square, seat, and whether the hulls are heading home.
-    let mut groups: std::collections::BTreeMap<((i64, i64), usize, bool), Vec<usize>> = Default::default();
+    // Keyed by the tactical place (§6.4), seat, and whether the hulls are
+    // heading home.
+    let mut groups: std::collections::BTreeMap<(usize, usize, bool), Vec<usize>> = Default::default();
     let hull_ops: Vec<&Op> = ops.iter().filter(|o| matches!(o, Op::Hull { .. })).collect();
     for (i, (op, h)) in hull_ops.iter().zip(&s.view.hulls).enumerate() {
-        let Op::Hull { s: sp, at, outline, vector, hit, quiet, wreck, .. } = op else { continue };
+        let Op::Hull { s: sp, at, outline, vector, hit, quiet, wreck, site, .. } = op else { continue };
         let p = pos(*sp);
         if clustered && wreck.is_none() && !*quiet {
-            groups
-                .entry((crate::tactical::stack_cell(s, h.row.pos), h.hull.owner, h.row.withdrawing))
-                .or_default()
-                .push(i);
+            groups.entry((*site, h.hull.owner, h.row.withdrawing)).or_default().push(i);
             continue;
         }
         if let Some((end, c)) = vector {
@@ -388,7 +386,7 @@ pub fn lights(s: &Scene, ops: &[Op]) -> Lights {
             ring(&mut out.scene, p, 3.0 * hull_r, hull_r, linear(s.palette.status(Status::Hit)));
         }
     }
-    // The clusters: each stack square's hulls of one seat about their mean
+    // The clusters: each place's hulls of one seat about their mean
     // position. Clusters that would overlap on screen are one place; in a
     // place each seat's hulls are one cluster, and where seats share it each
     // seat's cluster is set to its own side.
@@ -758,7 +756,7 @@ mod tests {
 
     /// **Below the galaxy level a stack is a cluster of dots** (T-163): one
     /// dot per hull in its seat's color, so losing a hull loses a dot; seats
-    /// sharing a stack square stand apart, each in its own color; and a hit
+    /// sharing a place stand apart, each in its own color; and a hit
     /// is a ring about the cluster, so the seat still shows inside it.
     #[test]
     fn a_stack_is_a_dot_per_hull_and_seats_stand_apart() {

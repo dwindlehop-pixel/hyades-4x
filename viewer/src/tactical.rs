@@ -32,16 +32,18 @@ pub const BAR_PX_PER_BAND: f64 = 2.0;
 /// A holding's tallest bar, tactical pixels: Band V.
 pub const BAR_MAX: u8 = 10;
 
-/// Hulls whose positions fall in one square this many tactical pixels wide
-/// are in one place (proposed, R-UI4). The square grows as the view zooms
-/// out, so a galaxy reads as clusters and a fight as single hulls.
-pub fn stack_px(lod: Lod) -> i64 {
-    match lod {
-        Lod::Galaxy => 8,
-        Lod::Sector => 5,
-        Lod::System => 3,
-    }
-}
+/// Tactical pixels past a glyph's half body where its place's first count
+/// starts: clear of the ears, the hit ring and the selection brackets, so a
+/// hit never covers a digit.
+pub const COUNT_OFFSET_PX: i64 = 6;
+/// Tactical pixels between the on-role count and the retreating count.
+pub const COUNT_GAP_PX: i64 = 2;
+/// Tactical pixels one digit of a count advances: three wide and one clear.
+pub const DIGIT_PX: i64 = 4;
+/// The digits a place's footprint leaves room for in each of its two counts
+/// (proposed, R-UI4): a place of a hundred hulls or more on its role, or
+/// heading home, draws a count up to four pixels past its footprint.
+pub const COUNT_ROOM_DIGITS: i64 = 2;
 
 /// A marker's side, tactical pixels: larger for more hulls.
 pub fn marker_px(count: usize) -> i64 {
@@ -114,6 +116,9 @@ pub enum Op {
         /// On the glyph drawn on top in its place, the ids of every hull in
         /// the place when there is more than one; empty otherwise.
         place: Vec<u64>,
+        /// The place this hull is in, as the index among the plan's hulls of
+        /// the place's first hull: one value on every hull of a place.
+        site: usize,
         /// On the glyph drawn on top in its place, the place's counts drawn
         /// beside it (T-164): hulls still on their role, and hulls heading
         /// home off it. A wreck is in neither.
@@ -307,6 +312,7 @@ pub fn plan(s: &Scene) -> Vec<Op> {
             count: 1,
             members: Vec::new(),
             place: Vec::new(),
+            site: 0,
             counts: (0, 0),
             marker: false,
             quiet,
@@ -331,37 +337,112 @@ pub fn plan(s: &Scene) -> Vec<Op> {
     ops
 }
 
-/// **Stacks** (`docs/Hyades_interface.md` §6.4): hulls in one place with one
-/// owner, Design, role, wreck state and quietness are one glyph with a count,
-/// carrying the worst damage, any hit, the sum of their cargo and any
-/// selection, drawn where its lowest-id hull stands. At the galaxy level a
-/// place is wider and a stack is every hull of one owner there, drawn as a
-/// marker sized by count. Glyphs in one place overlap in [`display_order`];
-/// the one on top carries the place's count.
-/// **The stack square a galaxy point falls in** (§6.4). The squares tile the
-/// galaxy at the view's scale — not the screen — so a pan moves no hull from
-/// one stack to another (T-160).
-pub fn stack_cell(s: &Scene, p: [f64; 3]) -> (i64, i64) {
-    let cell_ly = stack_px(s.camera.lod()) as f64 * PIXEL / s.camera.scale;
-    ((p[0] / cell_ly).floor() as i64, (-p[1] / cell_ly).floor() as i64)
+/// **A hull's footprint**, tactical pixels about its anchor, inclusive:
+/// `[left, top, right, bottom]` of what is drawn for it (§6.4). Below the
+/// galaxy level it is the glyph with its damage bar on the left and, for a
+/// hull that can carry its place's counts, room for them on the right; at
+/// the galaxy level, the largest marker. A quiet hull is its one pixel and
+/// the ring about it, so dots in touching pixels are one place however the
+/// galaxy rounds to pixels.
+pub fn footprint(lod: Lod, size: Size, quiet: bool, wrecked: bool) -> [i64; 4] {
+    if quiet {
+        return [-1, -1, 1, 1];
+    }
+    if lod == Lod::Galaxy {
+        let h = marker_px(usize::MAX) / 2;
+        return [-h, -h, h, h];
+    }
+    let r = glyph::body_px(size) / 2;
+    // Two columns of ears either side, two rows above and below; the
+    // damage bar one column left of the ears.
+    let (left, edge) = (-(r + 3), r + 2);
+    // Two counts of `COUNT_ROOM_DIGITS` digits, as `paint_with` sets them: a
+    // digit's last column is one short of the next digit's start, and the
+    // second count starts a gap past the column after the first. A wreck is
+    // in no count, so it never carries one.
+    let digits = COUNT_ROOM_DIGITS * DIGIT_PX - 1;
+    let counts = r + COUNT_OFFSET_PX + digits + COUNT_GAP_PX + digits - 1;
+    let right = if wrecked { edge } else { counts };
+    [left, -edge, right, edge]
 }
 
+/// **Places** (§6.4, the author's ruling, T-166): hulls whose
+/// [footprints](footprint) overlap on screen are one place, joined
+/// transitively. The reach is in tactical pixels, so in light-years it
+/// shrinks as the view zooms in — a fight parts into its hulls, a galaxy
+/// gathers into clusters — and no count is drawn over another place's glyph
+/// or count. Pixels are the galaxy rounded at the view's scale
+/// ([`pixel_of`]), so a pan regroups nothing (T-160). Returns, per hull, the
+/// index of its place's first hull.
+pub fn places(boxes: &[[i64; 4]]) -> Vec<usize> {
+    fn root(p: &mut [usize], i: usize) -> usize {
+        let mut r = i;
+        while p[r] != r {
+            r = p[r];
+        }
+        p[i] = r;
+        r
+    }
+    let mut parent: Vec<usize> = (0..boxes.len()).collect();
+    // Two boxes that overlap have their left-top corners less than the
+    // widest box apart, so each is checked against the 3×3 cells about it.
+    let cw = boxes.iter().map(|b| b[2] - b[0] + 1).max().unwrap_or(1);
+    let ch = boxes.iter().map(|b| b[3] - b[1] + 1).max().unwrap_or(1);
+    let mut cells: BTreeMap<(i64, i64), Vec<usize>> = BTreeMap::new();
+    for (i, b) in boxes.iter().enumerate() {
+        let (cx, cy) = (b[0].div_euclid(cw), b[1].div_euclid(ch));
+        for dx in -1..=1 {
+            for dy in -1..=1 {
+                for &j in cells.get(&(cx + dx, cy + dy)).map_or(&[][..], Vec::as_slice) {
+                    let o = &boxes[j];
+                    if b[0] <= o[2] && o[0] <= b[2] && b[1] <= o[3] && o[1] <= b[3] {
+                        let (ri, rj) = (root(&mut parent, i), root(&mut parent, j));
+                        parent[ri.max(rj)] = ri.min(rj);
+                    }
+                }
+            }
+        }
+        cells.entry((cx, cy)).or_default().push(i);
+    }
+    (0..boxes.len()).map(|i| root(&mut parent, i)).collect()
+}
+
+/// **Stacks** (`docs/Hyades_interface.md` §6.4): in one [place](places),
+/// hulls with one owner, Design, role, wreck state and quietness are one
+/// glyph with a count, carrying the worst damage, any hit, the sum of their
+/// cargo and any selection, drawn where its lowest-id hull stands. At the
+/// galaxy level a stack is every hull of one owner in a place, drawn as a
+/// marker sized by count. Glyphs in one place overlap in [`display_order`];
+/// the one on top carries the place's count.
 fn stack(ops: &mut [Op], s: &Scene) {
     let lod = s.camera.lod();
+    let boxes: Vec<[i64; 4]> = s
+        .view
+        .hulls
+        .iter()
+        .zip(ops.iter())
+        .map(|(h, op)| {
+            let Op::Hull { at, quiet, .. } = op else { unreachable!("the plan's hulls follow its worlds") };
+            let size = glyph::size(s.replay.hulls.get(h.hull.hull).map_or("", String::as_str));
+            let f = footprint(lod, size, *quiet, h.row.wrecked);
+            [at[0] + f[0], at[1] + f[1], at[0] + f[2], at[1] + f[3]]
+        })
+        .collect();
+    let site = places(&boxes);
     // At the galaxy level a group is one owner's armed or unarmed hulls in a
     // place; below it, one owner's hulls of one Design, role, wreck state and
     // quietness.
     // A wreck is never stacked with a live hull, at any level (T-164).
-    type Group = (i64, i64, usize, bool, bool, Option<(GlyphKey, usize, bool)>);
+    type Group = (usize, usize, bool, bool, Option<(GlyphKey, usize, bool)>);
     let mut groups: BTreeMap<Group, Vec<usize>> = BTreeMap::new();
     for (i, h) in s.view.hulls.iter().enumerate() {
-        let Op::Hull { key, quiet, .. } = ops[i] else { continue };
-        let cell = stack_cell(s, h.row.pos);
-        let kind = (lod != Lod::Galaxy).then_some((key, h.row.kind, quiet));
-        groups.entry((cell.0, cell.1, h.hull.owner, key.beams || key.tubes, h.row.wrecked, kind)).or_default().push(i);
+        let Op::Hull { key, quiet, site: at_site, .. } = &mut ops[i] else { continue };
+        *at_site = site[i];
+        let kind = (lod != Lod::Galaxy).then_some((*key, h.row.kind, *quiet));
+        groups.entry((site[i], h.hull.owner, key.beams || key.tubes, h.row.wrecked, kind)).or_default().push(i);
     }
-    let mut places: BTreeMap<(i64, i64), Vec<usize>> = BTreeMap::new();
-    for ((cx, cy, ..), mut members) in groups {
+    let mut places: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
+    for ((place, ..), mut members) in groups {
         members.sort_unstable();
         let (mut damage, mut hit, mut laden, mut selected, mut quiet, mut order) =
             (0.0f64, false, false, false, true, 0);
@@ -410,7 +491,7 @@ fn stack(ops: &mut [Op], s: &Scene) {
             (*q, *o, *c) = (quiet, order, cargo);
             *mem = ids;
         }
-        places.entry((cx, cy)).or_default().push(lead);
+        places.entry(place).or_default().push(lead);
     }
     let state: BTreeMap<u64, (bool, bool)> =
         s.view.hulls.iter().map(|h| (h.hull.id, (h.row.wrecked, h.row.withdrawing))).collect();
@@ -624,9 +705,9 @@ pub fn paint_with(s: &Scene, ops: &[Op], r: &mut Raster, cache: &mut GlyphCache)
         // The place's counts: hulls on their role, then — in the retreat
         // color — hulls heading home. Wrecks are in neither (T-164).
         let (on_role, retreating) = *counts;
-        let mut x = at[0] + half + 4;
+        let mut x = at[0] + half + COUNT_OFFSET_PX;
         if on_role > 1 || (on_role > 0 && retreating > 0) {
-            x = r.number(x, at[1] - 2, on_role, pal.roles.text_bright) + 2;
+            x = r.number(x, at[1] - 2, on_role, pal.roles.text_bright) + COUNT_GAP_PX;
         }
         if retreating > 0 {
             r.number(x, at[1] - 2, retreating, pal.status(Status::Retreat));
@@ -1284,19 +1365,20 @@ mod tests {
         view
     }
 
-    /// **Panning a paused view regroups nothing** (T-160): stacks are cells
-    /// of the galaxy at the view's scale, not of the screen, so moving the
-    /// camera by any fraction of a cell keeps every stack's members, its drawn
-    /// glyph and the drawing order. On a screen-fixed lattice hulls crossed
-    /// cell edges as the view moved, and glyphs flickered in size and order.
+    /// **Panning a paused view regroups nothing** (T-160, T-166): places
+    /// are footprints overlapping in pixels of the galaxy at the view's
+    /// scale, not of the screen, so moving the camera by any amount keeps
+    /// every stack's members, its drawn glyph and the drawing order. On a
+    /// screen-fixed lattice hulls crossed cell edges as the view moved, and
+    /// glyphs flickered in size and order.
     #[test]
     fn panning_keeps_every_stack_and_the_drawing_order() {
         let f = fixture();
         let mut view = f.replay.view_at(0.0);
         let five = *view.hulls.iter().find(|h| h.hull.id == 5).unwrap();
-        // A row of alike hulls a third of a stack cell apart, so some pair
-        // straddles a cell edge wherever the lattice falls.
-        let cell_ly = stack_px(f.camera.lod()) as f64 * PIXEL / f.camera.scale;
+        // A row of alike hulls 8/3 tactical pixels apart: some pairs within
+        // a footprint's reach, the row's ends beyond it.
+        let cell_ly = 8.0 * PIXEL / f.camera.scale;
         for k in 0..12 {
             let mut c = five;
             (c.hull.id, c.row.id) = (300 + k, 300 + k);
@@ -1341,6 +1423,100 @@ mod tests {
             cam.center[1] += step as f64 * pixel_ly / 9.0;
             assert_eq!(stacks(&cam), base, "panned {step}/10 of a pixel");
         }
+    }
+
+    /// **A place is footprints that overlap, joined transitively** (T-166),
+    /// and only those: boxes are inclusive, so edges in touching columns are
+    /// apart, and moving every box alike keeps the partition.
+    #[test]
+    fn places_join_overlapping_footprints_transitively_and_only_them() {
+        let b = |x: i64| [x, 0, x + 9, 9];
+        let boxes = [b(0), b(9), b(18), b(40)];
+        let site = places(&boxes);
+        assert_eq!(site, vec![0, 0, 0, 3], "0 meets 1, 1 meets 2, 3 stands clear");
+        let moved: Vec<[i64; 4]> =
+            boxes.iter().map(|v| [v[0] - 1_000_003, v[1] + 77, v[2] - 1_000_003, v[3] + 77]).collect();
+        assert_eq!(places(&moved), site);
+        assert_eq!(places(&[b(0), b(10)]), vec![0, 1], "adjacent columns do not overlap");
+    }
+
+    /// **No count is drawn over another place, at any zoom, and zooming in
+    /// only parts places** (T-166, the author's report on `beams`): a lattice
+    /// of stack squares put hulls a pixel apart in two places when a square's
+    /// edge fell between them, each drawing a count over the other's, and
+    /// moved its edges as the view zoomed so places merged and parted.
+    #[test]
+    fn no_count_is_drawn_over_another_place_and_zooming_in_only_parts_places() {
+        let f = fixture();
+        let mut view = f.replay.view_at(0.0);
+        let five = *view.hulls.iter().find(|h| h.hull.id == 5).unwrap();
+        // Alike hulls along a line at widening gaps, some heading home.
+        for k in 0..20u64 {
+            let mut c = five;
+            (c.hull.id, c.row.id) = (300 + k, 300 + k);
+            c.row.pos[0] += (k * k) as f64 * 1e-4;
+            c.row.pos[1] += (k % 3) as f64 * 3e-4;
+            c.row.withdrawing = k % 4 == 0;
+            view.hulls.push(c);
+        }
+        let r = glyph::body_px(glyph::size(&f.replay.hulls[five.hull.hull])) / 2;
+        let digits = |n: u32| n.to_string().len() as i64;
+        let hit = |a: [i64; 4], b: [i64; 4]| a[0] <= b[2] && b[0] <= a[2] && a[1] <= b[3] && b[1] <= a[3];
+        let mut camera = f.camera;
+        camera.center = [five.row.pos[0], five.row.pos[1]];
+        let mut coarser: Option<BTreeMap<u64, usize>> = None;
+        let (mut counted, mut most_counts, mut sizes) = (0, 0, Vec::new());
+        for step in 0..14 {
+            camera.scale = 100.0 * 2f64.powi(step);
+            let s = Scene {
+                replay: &f.replay,
+                view: &view,
+                camera: &camera,
+                palette: &f.palette,
+                selected: None,
+                rate: 1.0,
+            };
+            let ops = plan(&s);
+            let site: BTreeMap<u64, usize> = ops
+                .iter()
+                .filter_map(|o| if let Op::Hull { id, site, .. } = o { Some((*id, *site)) } else { None })
+                .collect();
+            // What each drawn glyph covers, and each drawn count.
+            let mut glyphs = Vec::new();
+            let mut labels = Vec::new();
+            for o in &ops {
+                let Op::Hull { at, count: 1.., site, counts, quiet: false, .. } = o else { continue };
+                let g = footprint(camera.lod(), Size::Medium, false, true);
+                glyphs.push((*site, [at[0] + g[0], at[1] + g[1], at[0] + g[2], at[1] + g[3]]));
+                let (on, back) = *counts;
+                if on > 1 || back > 0 {
+                    let x = at[0] + r + COUNT_OFFSET_PX;
+                    let mut end = x + DIGIT_PX * digits(on) - 2;
+                    if back > 0 {
+                        end += 1 + COUNT_GAP_PX + DIGIT_PX * digits(back) - 1;
+                    }
+                    labels.push((*site, [x, at[1] - 2, end, at[1] + 2]));
+                }
+            }
+            counted += labels.len();
+            most_counts = most_counts.max(labels.len());
+            sizes.push(site.values().collect::<std::collections::BTreeSet<_>>().len());
+            for (a, l) in &labels {
+                for (b, g) in glyphs.iter().chain(&labels) {
+                    assert!(a == b || !hit(*l, *g), "a count over another place at {} px/ly", camera.scale);
+                }
+            }
+            // Every place at this zoom lies inside one place of the coarser.
+            if let Some(c) = &coarser {
+                let mut parent: BTreeMap<usize, usize> = BTreeMap::new();
+                for (id, p) in &site {
+                    assert_eq!(*parent.entry(*p).or_insert(c[id]), c[id], "zooming in joined two places");
+                }
+            }
+            coarser = Some(site);
+        }
+        assert!(counted > 0 && most_counts > 1, "places drew counts side by side: {most_counts}");
+        assert!(sizes[0] < sizes[sizes.len() - 1], "the sweep spans places joined and parted: {sizes:?}");
     }
 
     #[test]

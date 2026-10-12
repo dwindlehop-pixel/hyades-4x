@@ -152,6 +152,21 @@ description of the change.
 
 ## Entries moved from Band A
 
+### T-166. Stacks are places of overlapping footprints, so counts never overlap
+
+*Opened and built in one landing at the author's report: "There needs to be a
+zoom-based proximity threshold for determining a stack. Right now the beams
+test demonstrates hysteresis at certain zoom levels where the stack numbers
+are right on top of each other. It's illegible."* Hulls whose footprints —
+glyph, damage bar and room for two two-digit counts, in tactical pixels —
+overlap on screen are one place (`tactical::footprint`, `tactical::places`),
+so the reach in light-years follows the zoom; the square lattice and
+`stack_px`/`stack_cell` are deleted. Juicy clusters by the same places. The
+counts start clear of the hit ring. On the `--quick` replays, counts drawn
+over another place fell 6,050 → 0 (`beams`) and 714 → 0 (`sentries`), and
+zoom-in steps that merged places 77 → 1 and 60 → 2 (`Hyades_interface.md`
+ruling 30, §6.4, §7.1; appendix §D.59).
+
 ### T-165. A workflow for root-causing and fixing Design and Doctrine changes
 
 *Opened and built in one landing at the author's request: "generalize the
