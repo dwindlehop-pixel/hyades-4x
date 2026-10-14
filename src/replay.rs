@@ -31,6 +31,11 @@ pub struct ReplayConfig {
     /// replay can hold a fight frame by frame and the decades after it at a
     /// size worth shipping (T-177). `None` spaces every frame alike.
     pub dense: Option<(f64, f64)>,
+    /// **Cards played** (T-180): each `(year, orders)` is applied through
+    /// [`Simulation::apply_orders`] — the one inbound channel, as a client
+    /// would — once the clock reaches `year`, which a recording sets to a
+    /// round barrier. In year order; empty, the run is card-free.
+    pub plays: Vec<(f64, Vec<crate::cards::Order>)>,
     /// The most logged events written; past it the replay says it was
     /// truncated.
     pub max_events: usize,
@@ -144,54 +149,104 @@ pub fn frame_times(horizon: f64, cfg: &ReplayConfig) -> Vec<f64> {
     }
 }
 
-pub fn record_run(galaxy: &Galaxy, mut sim: Simulation, cfg: &ReplayConfig) -> String {
-    let mut out = String::with_capacity(1 << 20);
-    header(&mut out, galaxy, &sim, cfg);
-    out.push_str(",\"frames\":[");
-    // Every hull seen, by id: what it is, written once after the frames.
-    let mut hulls: std::collections::BTreeMap<u64, crate::snapshot::VehicleSnapshot> = Default::default();
-    for (k, t) in frame_times(sim.horizon_years(), cfg).into_iter().enumerate() {
-        while sim.next_event_time().is_some_and(|n| n <= t) {
-            sim.step();
-        }
-        if k > 0 {
-            out.push(',');
-        }
-        let snap = sim.snapshot_at(t);
-        for v in &snap.vehicles {
-            // What a hull is does not change; when it was wrecked is learned
-            // in the first frame after.
-            let h = hulls.entry(v.id).or_insert(*v);
-            h.wrecked_at = h.wrecked_at.or(v.wrecked_at);
-        }
-        frame(&mut out, &snap);
+/// **Records a run whole**: [`Recorder`] stepped to its end.
+pub fn record_run(galaxy: &Galaxy, sim: Simulation, cfg: &ReplayConfig) -> String {
+    let mut r = Recorder::new(galaxy, sim, cfg.clone());
+    while r.step(usize::MAX) < r.frames_total() {}
+    r.finish()
+}
+
+/// **A run recorded a few frames at a time** (T-180), so a caller with a user
+/// waiting — the browser's engine module — can report progress between
+/// steps. The replay it finishes is byte for byte [`record_run`]'s.
+pub struct Recorder {
+    sim: Simulation,
+    cfg: ReplayConfig,
+    out: String,
+    times: Vec<f64>,
+    done: usize,
+    plays: usize,
+    /// Every hull seen, by id: what it is, written once after the frames.
+    hulls: std::collections::BTreeMap<u64, crate::snapshot::VehicleSnapshot>,
+}
+
+impl Recorder {
+    /// Writes the header; no frame is taken yet.
+    pub fn new(galaxy: &Galaxy, sim: Simulation, cfg: ReplayConfig) -> Recorder {
+        let mut out = String::with_capacity(1 << 20);
+        header(&mut out, galaxy, &sim, &cfg);
+        out.push_str(",\"frames\":[");
+        let times = frame_times(sim.horizon_years(), &cfg);
+        Recorder { sim, cfg, out, times, done: 0, plays: 0, hulls: Default::default() }
     }
-    out.push_str("],\"hull_fields\":");
-    strings(&mut out, &HULL_FIELDS);
-    out.push_str(",\"hulls\":[");
-    for (i, v) in hulls.values().enumerate() {
-        if i > 0 {
-            out.push(',');
+
+    /// The frames the replay will hold.
+    pub fn frames_total(&self) -> usize {
+        self.times.len()
+    }
+
+    /// Runs the simulation to the next `frames` frame times and takes each;
+    /// returns the frames taken so far.
+    pub fn step(&mut self, frames: usize) -> usize {
+        let end = self.done.saturating_add(frames).min(self.times.len());
+        while self.done < end {
+            let t = self.times[self.done];
+            while self.sim.next_event_time().is_some_and(|n| n <= t) {
+                self.sim.step();
+                while let Some((year, orders)) = self.cfg.plays.get(self.plays) {
+                    if self.sim.clock() < *year {
+                        break;
+                    }
+                    self.sim.apply_orders(self.sim.current_round(), orders);
+                    self.plays += 1;
+                }
+            }
+            if self.done > 0 {
+                self.out.push(',');
+            }
+            let snap = self.sim.snapshot_at(t);
+            for v in &snap.vehicles {
+                // What a hull is does not change; when it was wrecked is
+                // learned in the first frame after.
+                let h = self.hulls.entry(v.id).or_insert(*v);
+                h.wrecked_at = h.wrecked_at.or(v.wrecked_at);
+            }
+            frame(&mut self.out, &snap);
+            self.done += 1;
         }
-        out.push_str(&format!(
-            "[{},{},{},{},{},{},",
-            v.id,
-            v.owner,
-            index(&HULLS, v.hull),
-            index(&DESIGNS, v.design),
-            v.beams,
-            v.tubes
-        ));
-        match v.wrecked_at {
-            Some(t) => write_num(&mut out, t, WRECK_DECIMALS),
-            None => out.push_str("null"),
+        self.done
+    }
+
+    /// The replay: every frame taken so far, then the hulls and the events.
+    pub fn finish(self) -> String {
+        let Recorder { sim, cfg, mut out, hulls, .. } = self;
+        out.push_str("],\"hull_fields\":");
+        strings(&mut out, &HULL_FIELDS);
+        out.push_str(",\"hulls\":[");
+        for (i, v) in hulls.values().enumerate() {
+            if i > 0 {
+                out.push(',');
+            }
+            out.push_str(&format!(
+                "[{},{},{},{},{},{},",
+                v.id,
+                v.owner,
+                index(&HULLS, v.hull),
+                index(&DESIGNS, v.design),
+                v.beams,
+                v.tubes
+            ));
+            match v.wrecked_at {
+                Some(t) => write_num(&mut out, t, WRECK_DECIMALS),
+                None => out.push_str("null"),
+            }
+            out.push(']');
         }
         out.push(']');
+        events(&mut out, &sim, &cfg);
+        out.push('}');
+        out
     }
-    out.push(']');
-    events(&mut out, &sim, cfg);
-    out.push('}');
-    out
 }
 
 fn header(out: &mut String, galaxy: &Galaxy, sim: &Simulation, cfg: &ReplayConfig) {
@@ -641,6 +696,53 @@ mod tests {
         (galaxy, sim)
     }
 
+    /// **A card play lands at its year, through `apply_orders`, and a
+    /// recording stepped a frame at a time writes the bytes a whole one does**
+    /// (T-180). The barrier is brought to 100 yr so the bed stays short — a
+    /// seat holds under 0.01 kt of basics until about 70 yr on this bed and
+    /// 9–10 kt at 100, against a 0.5 kt card; the play is the client's path,
+    /// and nothing else differs between the arms.
+    #[test]
+    fn a_play_lands_at_its_barrier_and_a_stepped_recording_is_the_whole_one() {
+        use crate::cards::{CardId, Order, Target};
+        use crate::galaxy::PlayerId;
+        let make = || {
+            let (galaxy, _) = small(5, LogFilter::none());
+            let mut cfg = SimConfig::new(5);
+            cfg.horizon_years = 120.0;
+            cfg.years_to_first_round = 100.0;
+            let mut sim = Simulation::with_baseline(galaxy.clone(), cfg);
+            sim.set_log_filter(LogFilter::none().with(LogCategory::Cards));
+            (galaxy, sim)
+        };
+        let play = Order { seat: PlayerId(1), card: Some(CardId(0)), target: Target::None };
+        let cfg = ReplayConfig { plays: vec![(100.0, vec![play])], ..rc() };
+        let (g, s) = make();
+        let whole = record_run(&g, s, &cfg);
+        let doc = parse(&whole);
+        let played: Vec<(f64, f64, String)> = doc
+            .get("events")
+            .arr()
+            .iter()
+            .map(|e| (e.arr()[0].num(), e.arr()[3].num(), e.arr()[2].str().to_string()))
+            .filter(|(_, _, kind)| kind == "CardPlayed")
+            .collect();
+        assert_eq!(played.len(), 1, "the one play lands: {played:?}");
+        assert!(played[0].0 >= 100.0 && played[0].1 == 1.0, "at the barrier, by its seat: {played:?}");
+        let (g, s) = make();
+        let card_free = record_run(&g, s, &rc());
+        assert!(!card_free.contains("CardPlayed"), "a recording with no plays plays nothing");
+        let (g, s) = make();
+        let mut r = Recorder::new(&g, s, cfg.clone());
+        let mut done = 0;
+        while done < r.frames_total() {
+            let next = r.step(1);
+            assert_eq!(next, done + 1, "one frame a step");
+            done = next;
+        }
+        assert_eq!(r.finish(), whole);
+    }
+
     /// **A dense opening, then the even spacing** (T-177): frames every
     /// `dense.1` years to `dense.0`, then on the multiples of `frame_years`
     /// past it — exact, rising, none repeated, the last at the horizon's
@@ -657,7 +759,14 @@ mod tests {
     }
 
     fn rc() -> ReplayConfig {
-        ReplayConfig { frame_years: 10.0, dense: None, max_events: 100_000, label: "test".into(), focus: None }
+        ReplayConfig {
+            frame_years: 10.0,
+            dense: None,
+            plays: Vec::new(),
+            max_events: 100_000,
+            label: "test".into(),
+            focus: None,
+        }
     }
 
     /// **Every hull of every frame is in the replay, with every field the

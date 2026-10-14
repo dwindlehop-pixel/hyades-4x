@@ -27,8 +27,14 @@ fn recorded() -> (String, Simulation) {
         t.set_log_filter(LogFilter::none().with(LogCategory::Vehicles));
         t
     };
-    let rc =
-        ReplayConfig { frame_years: 10.0, dense: None, max_events: 100_000, label: "contract".into(), focus: None };
+    let rc = ReplayConfig {
+        frame_years: 10.0,
+        dense: None,
+        plays: Vec::new(),
+        max_events: 100_000,
+        label: "contract".into(),
+        focus: None,
+    };
     (record_run(&galaxy, sim, &rc), twin)
 }
 

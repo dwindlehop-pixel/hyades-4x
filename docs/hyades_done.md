@@ -153,6 +153,45 @@ description of the change.
 
 ## Entries moved from Band A
 
+### T-180. The demo games are recipes the browser records through the engine
+
+*Opened and built in one landing at the author's choice, asked whether the
+large replays were needed given a bit-deterministic simulation: "Recipes in
+the browser".* `hyades_engine::demos` holds each demo as a recipe — galaxy,
+seeded fleets, card plays at the barrier, framing — moved out of
+`examples/record_replay`, which now writes the same bytes to files.
+`replay::Recorder` records a few frames at a time and applies
+`ReplayConfig::plays` through `apply_orders`; `record_run` is its loop. The new
+crate `sim/` (`hyades-sim`) is the engine as a wasm32 module with a plain C
+interface; `web/sim-worker.js` runs it, one worker per recording, ended after
+it. The site ships no replay files and a 1.0 MB engine module; `demos.json`
+says whether the demos are the quick ones. Every full demo records the same
+bytes in wasm32 as natively; the 600-yr `palette` and 800-yr `forge` open in
+5.9–6.9 and 6.0–6.7 s in headless Chromium (two runs) (`Hyades_interface.md` ruling 38, §2, §3,
+§8; appendix §D.63.1).
+
+### T-181. More hulls, roles, years and resources in `palette` and `forge`
+
+*Opened at the author's request: "I need more diversity in built hulls and
+roles in the palette and forge replays and more years in those and
+resources."* `palette`: 600 yr (was 100), each seat plays one of six cards at
+the 200-yr barrier, and every seat's twin Designs are billed in supers.
+`forge`: a default start over 800 yr (was 60 yr from homeworlds at `Band IV`),
+a 10-ly surveyed start, a parade of every hull type and named Design on its
+role, the same cards and super-billed twins. `forge` shows all 17 hull and
+Design pairs and all eight materials carried, `Band IV` works from 740 yr;
+`palette` all eight materials carried. The `forge` start of #29 starved: works
+at `Band IV` with default population held 0.009 kt of basics for 250 yr, so no
+card landed; `GalaxyConfig::homeworld_start_infrastructure`, added for it, is
+deleted as unused (`Hyades_interface.md` ruling 39, §6.2; appendix §D.63.2).
+
+### T-182. The viewer holds a replay in under half the memory
+
+Arrays of numbers parse into `Value::Nums` (8 bytes a number, allocated to
+size) instead of a `Value` per number, and `hv_load` parses the input buffer
+in place and releases it. Viewer wasm memory after loading: `palette` 454 →
+262 MB, `forge` 305 → 178 MB, `expansion` 129 → 74 MB (appendix §D.63.3).
+
 ### T-179. The juicy background is the palette's ink
 
 *Opened and built in one landing at the author's ruling: "Use `ink` for the

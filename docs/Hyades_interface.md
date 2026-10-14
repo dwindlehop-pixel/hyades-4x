@@ -151,6 +151,15 @@ RATIFIED (T-179, the author's ruling):
 37. **The juicy background is `ink`** — the tone map's darkest tone (§6.2,
     §7.1).
 
+RATIFIED (T-180, T-181, the author's rulings):
+
+38. **The demo games ship as recipes the browser records through the
+    engine** — a seed, its settings and its card plays, not a recorded file:
+    the engine is bit-deterministic, native and wasm32 alike, so the recipe
+    is the replay (§2, §8.1). The author's choice over keeping recorded files.
+39. **The `palette` and `forge` demos carry more diversity of built hulls and
+    roles, more years, and more resources** (§6.2).
+
 ---
 
 ## 2. The seam
@@ -163,6 +172,15 @@ Simulation ──snapshot_at(t)──▶ record_run ──JSON──▶ Replay �
  (engine)                       (engine)                       (viewer crate, wasm32)
 ```
 
+**The demo games are recorded where they are watched** (ruling 38, T-180):
+each is a recipe in the engine (`hyades_engine::demos` — a galaxy, its seeded
+fleets, the cards played at the round barrier and how to frame the record),
+and the client runs it through **the engine's browser module** (`sim/`,
+`hyades-sim`, compiled to wasm32) in a web worker, which records a frame at a
+time (`replay::Recorder`) and posts progress, then the finished replay; the
+shell gives it to the viewer as it would a file. The module and the native
+engine write the same bytes for every demo (appendix §D.63.1).
+
 - The viewer crate **does not link the engine**. Its only dependency on it is a
   dev-dependency for the contract test (`viewer/tests/contract.rs`), which
   records a run and checks that the viewer reads every world, every hull of
@@ -170,9 +188,11 @@ Simulation ──snapshot_at(t)──▶ record_run ──JSON──▶ Replay �
 - The engine gains no presentation code: `snapshot_at` and `next_event_time`
   are reads of state the engine already holds, and the recorder is pure data
   (no filesystem, no clock).
-- Watching a game **as it runs** — the engine in the browser beside the viewer,
-  streaming frames — is OPEN (**R-UI5**). Recommendation: the same replay
-  format, appended to frame by frame, so the viewer has one input.
+- Watching a game **as it runs** — streaming frames to the viewer while the
+  engine records — is OPEN (**R-UI5**); the engine runs in the browser since
+  T-180, and the viewer is handed the replay once it is whole.
+  Recommendation: the same replay format, appended to frame by frame, so the
+  viewer has one input.
 
 ---
 
@@ -217,10 +237,16 @@ Decisions in the format:
   #16), not a value in the file.
 - **One seed records one replay, byte for byte** — a replay is a pure function
   of the run.
-- Size: OPEN (**R-UI6**). A 400-year, 3-seat, 159-world replay at a 5-year
-  frame is 8.9 MB (2.1 MB compressed, §D.58.2). Recommendation: a version 2
-  that writes only the hulls whose state changed since the previous frame,
-  when a replay the author wants to keep passes ~50 MB.
+- **Cards played** (T-180): a recording carries `(year, orders)` pairs
+  (`ReplayConfig::plays`), each applied through `apply_orders` — the one
+  inbound channel, as a client would — once the clock reaches its year, which
+  a demo sets to the first round barrier.
+- Size: OPEN (**R-UI6**). A demo is no longer downloaded (ruling 38), so what
+  bounds it is memory: the viewer holds 262 MB after loading the 600-yr,
+  18-seat `palette` (42.8 MB of text) and 178 MB after `forge` (appendix
+  §D.63.3). Recommendation: a version 2 that writes only the hulls whose state
+  changed since the previous frame, when a demo or a replay the author wants
+  to keep would pass ~500 MB of viewer memory.
 
 ---
 
@@ -295,18 +321,32 @@ client's **Palette** screen (§8.1) is a reference sheet of the same values —
 each source color beside its mapped color, every role, seat and status color —
 and shows a link's settings too.
 
-**The palette is seen in play** (ruling 36, T-177): the `palette` replay is
-eighteen seats — every seat color the largest fair table uses — with a picket
-stack of each on a ring beside seat 0's homeworld, half of them closing on the
-middle to brake, fight, take hits, wreck and withdraw past a sentry post, and
-then a century of every seat's opening traffic: scouts, miners, freighters and
-colonizers, the three basics carried, settlers aboard, ordnance, holdings, and
-established hex lines (§8.4). Its first year is framed every 0.02 yr (§3);
-watch it at ×1/16. The `forge` replay starts six homeworlds at population and
-works `Band IV`, for the `Band IV` dashes and a forge's holdings of Strange
-Matter. **What no shipped replay shows** (measured, appendix §D.62.4): the
-Blue super held or carried, any super or the apex as cargo, and the Red and
-Green supers anywhere but `expansion`'s last frame, at 400 yr.
+**The palette is seen in play** (rulings 36 and 39, T-177, T-181):
+
+- **`palette`** is eighteen seats — every seat color the largest fair table
+  uses — with a picket stack of each on a ring beside seat 0's homeworld, half
+  of them closing on the middle to brake, fight, take hits, wreck and withdraw
+  past a sentry post; then **six centuries** of every seat's traffic: scouts,
+  miners, freighters and colonizers, settlers, holdings and established hex
+  lines. Each seat plays one of six cards at the 200-yr barrier (Warfare,
+  missile, Scarp unlock, Growth, Production, ecology, by turns), so seats
+  build Cairn pickets and Butte sentries; every seat's twin Designs are billed
+  0.15 in each super and 0.05 in the apex, so the three supers and the apex
+  are held from 330–350 yr and carried. Its first year is framed every
+  0.02 yr (§3); watch it at ×1/16.
+- **`forge`** is six seats over **eight centuries**, with a surveyed start
+  (10 ly) and a parade of every hull and named Design on its role generated
+  with the galaxy — Spur and Tor scouts, Delta, Range and Scarp colonizers,
+  Meadow miners, Ford and Strait freighters, Cairn and Mesa pickets, Butte
+  sentries, and the four hulls no Design names — plus the same cards and the
+  same super-billed twins. Forges stand from 330–400 yr, every one of the
+  eight materials is carried, and a world holds `Band IV` works from 740 yr.
+
+Measured coverage is in appendix §D.63.2. **No yard built a Range or Scarp
+colonizer** in either demo; the two in `forge` are generated with the galaxy.
+The autopilot takes the General rung only when a center can afford it and it
+delivers more settlers per mineral than the Medium one
+(`BaselineAutopilot::production_choice`).
 
 **The proposed tone map, "Earthrise"**, in OKLCH (Björn Ottosson, *A perceptual
 color space for image processing*, 2020):
@@ -727,7 +767,7 @@ The site is one page, the game client, showing **one screen at a time**
 |---|---|---|
 | **Menu** | New game, Replays, Palette | `./` |
 | **New game** | the relay test (T-169): make a link, open one, Open games, the room, the match, the relays and the log; saves the diagnostics and the match record (`docs/Hyades_sessions_discovery_and_security.md` §11) | `?view=new`, or a room link `#j=<payload>` |
-| **Replays** | the recorded replays at this commit, and "Open a replay file…" | `?view=replays` |
+| **Replays** | the demo games, each recorded in the browser when opened (§2), and "Open a replay file…" | `?view=replays` |
 | **Palette** | the palette sheet (§6.2) | `?view=palette` |
 | **Viewer** | one replay, with a back button to the menu (and Esc) | `?replay=<name>` |
 
@@ -768,11 +808,13 @@ Pixel 7 emulation that the theater is at least 60% of the screen's height
   radius (10 CSS pixels for a mouse, 14 for a pen, 24 for a finger — a finger
   covers more of the screen than a cursor), else the nearest world. Every
   magnitude is a *placeholder*.
-- **Robustness**: the module, the replay index and a replay are fetched up to
+- **Robustness**: the viewer's module and the engine's module are fetched up to
   four times on a server error (5xx) or a dropped connection, 0.5, 1 and 2 s
   apart; a load that still fails says why and offers "Try again". A WebGL2
   error or a lost context moves drawing to the module's CPU renderer for the
-  rest of the session (§7.3).
+  rest of the session (§7.3). While a demo records, the message says which
+  frame of how many it has reached; a recording that fails says why and offers
+  "Try again".
 
 ### 8.4 The parts
 
@@ -798,13 +840,20 @@ Pixel 7 emulation that the theater is at least 60% of the screen's height
 - **Controls**: play forward/pause, play backward/pause (§8.3), step, a rate multiplier, a scrubber, and
   the input of §8.3; the side panel's palette editor tunes the palette live
   (§6.2.1).
-- **`web/build.sh <out> [--quick]`** assembles the site: the module, the page,
-  and replays recorded by `examples/record_replay` at that commit (expansion,
-  a beam fight, the palette in play, a forge at `Band IV`, a missile-sentry
-  fight).
+- **`sim/`** — `hyades-sim`, the engine's browser module (§2, T-180): links
+  the engine and nothing else, compiled to wasm32 as a module with no imports,
+  with a plain C interface (`hs_demos`, `hs_begin`, `hs_step`, `hs_finish`).
+  `web/sim-worker.js` runs it: the shell compiles the module once, gives each
+  recording a worker of its own, and ends the worker after it, because a
+  module's memory never shrinks.
+- **`web/build.sh <out> [--quick]`** assembles the site: the two modules, the
+  page and the worker, and `demos.json`, which says whether the site's demos
+  are the quick ones the tests open. No replay is recorded at build time;
+  `examples/record_replay` writes the demos to files for opening as files.
 
 **Tests**: the viewer crate's unit tests; the contract test (§2);
-`web/test/smoke.mjs`, which drives the module headless over every replay in
+`web/test/smoke.mjs <site>`, which records every demo through the engine's
+module as the worker does and drives the viewer module headless over each in
 both modes; and `web/test/browser.mjs`, which opens the site in headless
 Chrome, goes from the menu through Replays to a replay, checks it renders on
 WebGL2 without a console error, checks the glyph legend shows every role's
@@ -813,8 +862,8 @@ compares GPU and CPU juicy on the proposed palette and over a visible ink, and c
 drives the palette editor (a link's settings open with the page; a slider
 redraws the canvas and rewrites the link; a hand-set color reaches the settings
 line; reset returns to the proposal), returns to the menu and opens the
-Palette screen, follows the old `palette.html` link, serves one 503 and checks
-the replay loads on the second request, loses the WebGL context and checks
+Palette screen, follows the old `palette.html` link, answers the engine's module
+503 once and checks the demo records on the second request, loses the WebGL context and checks
 the CPU renderer draws and a click still selects, and on a Pixel 7 emulation checks the
 theater's size, that nothing scrolls sideways, and that a tap beside a drawn
 hull selects it. `web/test/relay-match.mjs` runs a loopback Nostr relay that
@@ -836,8 +885,8 @@ job runs the same build and tests on every pull request.
 | **R-UI2** | juicy mode's style (§7.2), including its resolution on high-density screens | OPEN — first pass built; worlds dimmed at T-151 after the author found them illegible; hexes and the works trend added at T-159 with placeholder magnitudes (§7.1); paths added at T-175; the background is the palette's `ink` (ruling 37, T-179) | the author's judgment against recorded games |
 | **R-UI3** | the glyph grammar (§6.3) | OPEN — revised at T-153: armed bodies solid and unarmed hollow; a 3×3 role mark per role; glyphs a pixel wider each side; a legend | the author's review on the deployed site |
 | **R-UI4** | stacking and the tactical layer: the room a footprint keeps for counts (ruling 30 ratified places as overlapping footprints), the Galaxy-level owner markers, the display order, the place count, paths, holding bars, quiet hulls and cargo stripes (§6.4–§6.7) | OPEN — revised at T-152: glyphs only where their hulls stand (ratified), the fan replaced by a display order; holdings, colonies by color, quiet traffic and cargo composition added at the author's direction; armed hulls stay prominent (ruling 18); routes replaced by paths at T-174 (rulings 32–33), their magnitudes proposed | the author's review on the deployed site; a census of stack sizes on a long replay if counts prove unreadable |
-| **R-UI5** | watching a game live (§2) | OPEN — recommendation attached | a decision to run the engine in the browser; the recorder's API already takes a running `Simulation` |
-| **R-UI6** | replay size (§3) | OPEN — recommendation attached | the first replay the author wants to keep that passes ~50 MB |
+| **R-UI5** | watching a game live (§2) | OPEN — recommendation attached; the engine runs in the browser since T-180 and hands the viewer a whole replay | a decision to stream frames to the viewer while the engine records; `replay::Recorder` already records a frame at a time |
+| **R-UI6** | replay size (§3) | OPEN — recommendation attached; demos are no longer downloaded (ruling 38), so viewer memory bounds them | the first demo or replay the author wants to keep that would pass ~500 MB of viewer memory |
 | **R-UI7** | showing height `z` in the galaxy view (§6.1) | OPEN | the author's ruling on whether the view stays top-down |
 | **R-UI8** | which upstream packages the interface takes up now that it may (ruling 14) | OPEN — recommendation attached; `wasm-bindgen`/`web-sys` taken up by `net/` at T-169 (the author's choice), the viewer still on its C interface | a need the current code cannot meet. Recommendation: none yet; the first candidates are `wasm-bindgen`/`web-sys` (to retire the hand-written C interface and `shell.js`'s byte copying) and `wgpu` (to move `gpu.js` into Rust), each taken when a change would otherwise be built on the hand-rolled path |
 | **R-UI9** | the client's phone layout and touch magnitudes: the 760-pixel breakpoint, the sheets, the tap slop and pick radius (§8.2–8.3), and which platforms target 30 frames a second (§4) | OPEN — proposal built; 30 fps where the primary pointer is coarse (T-173) | the author's use of the deployed site on a phone |

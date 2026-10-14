@@ -434,3 +434,87 @@ developed homeworld spends its first century deepening and forging before
 expanding, so a replay cannot open with `Band IV` and show the expansion
 traffic within a shippable horizon; low confidence in the mechanism, which a
 census of the production decisions on that bed would settle.
+
+## D.63 The demo games as recipes, their coverage, and the viewer's memory (T-180 – T-182)
+
+*Supports `docs/Hyades_interface.md` rulings 38–39, §2, §3 and §6.2. Bed: the
+five demos in `hyades_engine::demos` at this commit. Timings are single runs
+on a shared 4-core container unless a range is given, and a range is two
+runs; no error bar is available for them.*
+
+### D.63.1 One recipe, one replay, on both targets
+
+Every full demo recorded through the wasm32 engine module (`hyades_sim.wasm`
+in Node, a frame at a time in steps of 4) and through the native engine
+(`examples/record_replay`) gives **byte-identical replays**, five of five:
+
+| demo | frames | replay | native record | wasm32 record (Node) | open in headless Chromium |
+|---|---|---|---|---|---|
+| `expansion` | 81 | 11.6 MB | 0.5 s | 0.85–0.98 s | 1.5–2.6 s |
+| `beams` | 151 | 1.0 MB | 0.0 s | 0.07 s | 0.3–0.4 s |
+| `palette` | 111 | 42.8 MB | 3.3 s | 4.75–4.94 s | 5.9–6.9 s |
+| `forge` | 81 | 28.7 MB | 3.2 s | 5.67 s | 6.0–6.7 s |
+| `sentries` | 151 | 0.8 MB | 0.1 s | 0.08 s | 0.3 s |
+
+"Open" is from loading the page at `?replay=<name>` to the first drawn frame:
+fetching and compiling the module, recording in a worker, handing the replay
+over and parsing it. The module is 1.0 MB; its memory reaches 148 MB while
+recording `palette` or `forge` and is released when the shell ends the
+worker. The three demos #29 shipped unchanged record byte for byte what the
+old example wrote.
+
+### D.63.2 What each demo shows
+
+A scratch census over every hull row of every frame. Hull and Design pairs
+seen:
+
+| demo | pairs |
+|---|---|
+| `palette` (600 yr, 18 seats, 300 planets requested) | LSV Spur, LSV Meadow, LSV Ford, LSV Unnamed, MSV Delta, MSV Ford, GSV Strait, LCV Tor, LCV Cairn, LOU Butte — 10 |
+| `forge` (800 yr, 6 seats, 300 planets requested) | the ten above, LCU, GCU, ROU and GOU Unnamed, GSV Range, GCV Scarp, LOU Mesa — 17 |
+
+Materials carried: all eight in both (`palette`: Blue 51 rows, Green 51, Red
+34, Strange Matter 37; `forge`: Blue 909, Green 1,273, Red 712, Strange Matter
+778). Held from: the supers and the apex at 330–350 yr in `palette`, 330–400 yr
+in `forge`. `Band IV` works: `forge` from 740 yr, `palette` none. Roles: all
+eight in `forge`. Cards landed: 18 of 18 and 6 of 6 at 200 yr.
+
+How the demos got there, arm by arm:
+
+| arm | size | what it showed, or why it failed |
+|---|---|---|
+| `palette` 400 yr, 600 planets, 5-yr frames, survey cards among the six | 74.6 MB | 669,285 of ~800,000 hull rows are Spur scouts; the survey cards add scouts |
+| `palette` 400 yr, 300 planets, 10-yr frames, no survey cards | 24.2 MB | 18 cards land; supers held from 330 yr; **no scout is built after 200 yr** (the field is surveyed), so the Warfare card has no scouts to move onto Tor, and colonizers stay on Delta |
+| `palette` 600 yr, the same plus super-billed twins (shipped) | 42.8 MB | supers and the apex carried |
+| `forge` works and population at `Band IV`, 60 yr (#29) | 0.47 MB | forging takes priority over building; only the starting scouts move |
+| `forge` works at `Band IV`, population default, 600 yr | 2.8 MB | **0 cards land**: each seat holds 0.008–0.009 kt of basics from 50 to 250 yr against a 0.5 kt card. Inference: works four Bands above the people are mostly unstaffed, so the homeworld mines almost nothing; not measured directly |
+| `forge` default start, 800 yr, cards and twins | 32.1 MB | 6 cards land, all eight materials carried, `Band IV` from 420 yr, Butte sentries and Cairn pickets built; no Range, Scarp, Tor, Mesa, LCU, GCU, ROU or GOU |
+| the same plus the parade and a 10-ly survey (shipped) | 28.7 MB | all 17 pairs; `Band IV` from 740 yr |
+
+No yard built a Range or Scarp in any arm. The General colonizer rung is taken
+only when a center can pay for it and it delivers more settlers per mineral
+than the Medium one (`BaselineAutopilot::production_choice`); the census
+counts builds, and the comparison itself was not instrumented.
+
+### D.63.3 The viewer's memory
+
+Wasm memory of the viewer module after `hv_load` (a scratch Node probe; it
+does not move in the first render of either mode):
+
+| demo | before | after |
+|---|---|---|
+| `palette` | 454 MB | 262 MB |
+| `forge` | 305 MB | 178 MB |
+| `expansion` | 129 MB | 74 MB |
+
+Natively, with a counting allocator on `palette`: the parse tree was 492 MB
+and the peak 657 MB; after, 110 MB and 275 MB, with the built replay itself
+123 MB in both. Two causes. **A `Value` per number**: storing a numbers-only
+array as `Vec<f64>` at first changed nothing measurable, because the
+`Vec<Value>` → `Vec<f64>` collect reused the original allocation in place and
+kept 32 bytes of capacity a number; parsing straight into a `Vec<f64>` and
+shrinking it to size is what took the tree from 492 to 110 MB. **A copy of the
+input**: `hv_load` copied the input buffer into a `String` before parsing,
+another 43 MB for `palette`; it now parses in place and releases the buffer.
+The replay holds 453,905 hull rows for `palette`, 286,195 for `forge` and
+121,794 for `expansion`.

@@ -7,7 +7,7 @@
 //     reference) within a stated tolerance;
 //   - play, the log text filter and a log row's seek work;
 //   - the palette editor, the palette screen and the old palette.html link;
-//   - a replay answered 503 once is fetched again;
+//   - the engine's module answered 503 once is fetched again, and the demo records;
 //   - a lost WebGL context falls back to the CPU renderer, which draws and picks;
 //   - on a phone (Pixel 7 emulation) the theater fills most of the screen with
 //     no sideways scroll, and a tap on a drawn hull selects it.
@@ -251,16 +251,17 @@ try {
   await old.waitForFunction(() => window.hyades?.hv() && document.querySelectorAll("#chips-source .chip").length === 40, null, { timeout: 15000 });
   check((await old.evaluate(() => window.hyades.text(9))).startsWith("ink=0.1 "), "the old palette.html link opens the palette screen with its palette");
 
-  // A replay the server answers 503 once is fetched again.
+  // The engine's module, answered 503 once, is fetched again and the demo
+  // records (T-180).
   const flaky = await browser.newPage();
   let refused = 0;
-  await flaky.route("**/replays/sentries.json", (route) => {
+  await flaky.route("**/hyades_sim.wasm", (route) => {
     if (refused++ === 0) route.fulfill({ status: 503, body: "busy" });
     else route.continue();
   });
   await flaky.goto(`${base}/?replay=sentries`);
   await flaky.waitForFunction(() => window.hyades?.loaded() === "sentries" && document.getElementById("message").hidden, null, { timeout: 30000 });
-  check(refused === 2, `a replay answered 503 is fetched again (${refused} requests)`);
+  check(refused === 2, `the engine's module answered 503 is fetched again and the demo records (${refused} requests)`);
 
   // A lost WebGL context moves drawing to the module's CPU renderer, on a
   // fresh canvas that still draws and still takes a click.

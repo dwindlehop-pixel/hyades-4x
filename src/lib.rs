@@ -55,6 +55,7 @@ pub mod autopilot;
 pub mod belief;
 pub mod cards;
 pub mod combat;
+pub mod demos;
 pub mod galaxy;
 pub mod log;
 pub mod matching;

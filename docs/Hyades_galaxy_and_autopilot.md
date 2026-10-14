@@ -141,13 +141,6 @@ starting miners, freighters and colony ships do not bring it earlier; from
 `Band II .785` with them the first forge stands at 400.7 yr, standard deviation
 0.5 yr, on all three grounds.
 
-**A homeworld starts with works at `Band II`** — `RATIFIED` as the starting
-development gate, now a setting rather than a constant
-(`GalaxyConfig::homeworld_start_infrastructure = (BandTier::II, 0.0)`, T-177)
-so a bed can vary it; one Band of people staffs one Band of works, so a bed
-that raises it raises the start population with it. Only the interface's
-`forge` replay changes it (`Hyades_interface.md` §6.2).
-
 **Eventual self-synthesis.** At **pop Band IV** a homeworld synthesizes its archetype's super from its trio's two rich basics, which are that super's recipe. **R-G4 — resolved (the author's ruling: "forges have to produce supers according to color theory").** "Exactly one super" is a gradient, not a rule: a forge makes any super whose two basics it holds 1:1 (§4.2), and an archetype is native to one super only in that its trio supplies that recipe. Measured with the trio, hex-scale color, the ore cap and a priced works bill: **0.27% of refined mass synthesized crosses between empires** (24 runs, appendix §D.28) — empires make their own supers from basics their own freight brings. With forging a forge's purpose and forges bidding for supers (§4.5), card-free: every forge still makes all three supers, and 3.7% of supers forged cross between empires (appendix §D.31).
 
 ---

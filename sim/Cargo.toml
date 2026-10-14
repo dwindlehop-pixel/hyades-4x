@@ -1,0 +1,14 @@
+[package]
+name = "hyades-sim"
+version = "0.1.0"
+edition = "2021"
+description = "Hyades engine as a browser module: records a demo game from its recipe into the replay format the viewer reads (docs/Hyades_interface.md §2, T-180). Links the engine; the viewer does not."
+license = "Apache-2.0"
+
+[dependencies]
+hyades-engine = { path = ".." }
+
+[lib]
+# cdylib is the wasm32 module the web worker loads; rlib is what `cargo test`
+# links.
+crate-type = ["cdylib", "rlib"]

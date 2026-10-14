@@ -16,7 +16,11 @@ const encoder = new TextEncoder();
 let hv = null;          // the module's exports
 let gpu = null;         // the WebGL2 renderer, or null
 let ctx2d = null;       // the 2D fallback
-let index = [];         // the recorded replays: [{name, label, file}]
+// The demo games (T-180): recipes the engine records in a worker, where they
+// are watched. `demos` resolves to [{name, label, seats, horizon_years}].
+let demos = null;
+let simModule = null;   // hyades_sim.wasm, compiled once; each recording gets a worker
+let simQuick = false;   // the site's demos are the short, small versions
 let loaded = null;      // the name of the replay in the module, or null
 let dirty = true;       // something on screen is out of date
 let baseRate = 1;       // the replay's opening rate, years per second
@@ -99,7 +103,15 @@ $("menu-new").addEventListener("click", () => go("?view=new"));
 $("menu-replays").addEventListener("click", () => go("?view=replays"));
 $("menu-palette").addEventListener("click", () => go("?view=palette"));
 
-function buildReplayList() {
+async function buildReplayList() {
+  $("replays-message").textContent = "Loading the demo games…";
+  let index = [];
+  try {
+    index = await demos;
+  } catch (e) {
+    $("replays-message").textContent = `Could not load the engine: ${e.message}. Open a replay file.`;
+    return;
+  }
   $("replay-list").replaceChildren(...index.map((r) => {
     const b = document.createElement("button");
     const sub = document.createElement("span");
@@ -111,7 +123,7 @@ function buildReplayList() {
     li.append(b);
     return li;
   }));
-  $("replays-message").textContent = index.length ? "" : "No recorded replays here. Open a replay file.";
+  $("replays-message").textContent = index.length ? "" : "No demo games here. Open a replay file.";
 }
 
 // --- the palette sheet -------------------------------------------------------
@@ -377,21 +389,75 @@ async function fetchBytes(url, tries = 4) {
   throw new Error(`${why} (${tries} tries)`);
 }
 
+/// **A worker running the engine's module**, which answers `message` with
+/// `onData` until it calls `done`; the worker then ends, and the memory the
+/// module grew to goes with it (wasm memory never shrinks).
+function withSim(message, onData) {
+  return new Promise((resolve, reject) => {
+    const w = new Worker("sim-worker.js");
+    const end = (f, x) => {
+      w.terminate();
+      f(x);
+    };
+    w.onmessage = ({ data }) => onData(data, (x) => end(resolve, x), (e) => end(reject, e));
+    w.onerror = (e) => end(reject, new Error(e.message || "the engine's worker failed"));
+    w.postMessage({ type: "init", module: simModule, quick: simQuick });
+    if (message) w.postMessage(message);
+  });
+}
+
+/// **Loads the engine's module** and asks it for the demo list (T-180). The
+/// module's bytes come through fetchBytes, so a deployment's 503 is retried
+/// here as for everything else the page fetches.
+function startSim() {
+  demos = (async () => {
+    simQuick = await fetchBytes("demos.json", 1)
+      .then((b) => JSON.parse(decoder.decode(b)).quick === true)
+      .catch(() => false);
+    simModule = await WebAssembly.compile(await fetchBytes("hyades_sim.wasm"));
+    const text = await withSim(null, (data, done, fail) =>
+      data.type === "demos" ? done(data.text) : fail(new Error(data.message)));
+    return text.split("\n").filter(Boolean).map((l) => {
+      const [name, label, seats, horizon] = l.split("\t");
+      return { name, label, seats: Number(seats), horizon_years: Number(horizon) };
+    });
+  })();
+  // A failure is reported where the list is used; keep it from being unhandled.
+  demos.catch(() => {});
+}
+
+/// **Records the demo `name`** in a worker of its own, reporting progress.
+function record(name, progress) {
+  return withSim({ type: "record", name, quick: simQuick }, (data, done, fail) => {
+    if (data.type === "progress") progress(data.done, data.total);
+    else if (data.type === "replay") done(new Uint8Array(data.bytes));
+    else if (data.type === "error") fail(new Error(data.message));
+  });
+}
+
 async function openRecorded(name) {
-  const entry = index.find((r) => r.name === name);
   document.body.dataset.screen = "viewer";
-  if (!entry) {
-    showMessage(name === "file"
-      ? "A replay opened from a file is not kept across a reload; open it again from Replays."
-      : `No recorded replay is named ${name}.`);
+  if (name === "file") {
+    showMessage("A replay opened from a file is not kept across a reload; open it again from Replays.");
     return;
   }
   loaded = name;
   showMessage(`Loading ${name}…`);
   try {
-    load(await fetchBytes(`replays/${entry.file}`), name, name);
+    const index = await demos;
+    if (!index.some((r) => r.name === name)) {
+      loaded = null;
+      showMessage(`No demo game is named ${name}.`);
+      return;
+    }
+    const bytes = await record(name, (done, total) => {
+      if (loaded === name) showMessage(`Recording ${name}: frame ${done} of ${total}…`);
+    });
+    if (loaded === name) load(bytes, name, name);
   } catch (e) {
+    if (loaded !== name) return;
     loaded = null;
+    if (!simModule) startSim();
     showMessage(`Could not load ${name}: ${e.message}.`, () => openRecorded(name));
   }
 }
@@ -789,11 +855,7 @@ async function start() {
   else canvas.addEventListener("webglcontextlost", (e) => { e.preventDefault(); fallBackToCpu("context lost"); });
   document.body.dataset.renderer = gpu ? "webgl2" : "cpu";
   window.hyades = { hv: () => hv, gpu: () => gpu, draw: () => draw(), text, loaded: () => loaded };
-  try {
-    index = JSON.parse(decoder.decode(await fetchBytes("replays/index.json")));
-  } catch {
-    index = [];
-  }
+  startSim();
   phone.addEventListener("change", () => {
     document.body.classList.toggle("side-open", !phone.matches);
     document.body.classList.toggle("log-open", !phone.matches);

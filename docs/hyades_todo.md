@@ -1716,6 +1716,13 @@ is `apply_orders`, run in a Worker, plus the verifier of sessions spec §5.4 and
 merge witness transcripts. A separate module from `hyades-viewer`, which must
 not link the engine (interface §2). Blocked for the root comparison on T-32.
 
+**Advanced at T-180:** the engine is a browser module (`sim/`, `hyades-sim`,
+a plain C interface), run in a web worker that records the demo games from
+their recipes (`hyades_engine::demos`); a recipe's card plays enter through
+`apply_orders`. Its wasm32 recordings equal the native engine's byte for byte
+on every demo (appendix §D.63.1). Remaining: orders from a match rather than
+a recipe, and the verifier.
+
 ### T-167. The rendezvous layer and the link flow
 
 Sessions spec §3–§5: the `publish`/`subscribe` rendezvous over Nostr, the link
