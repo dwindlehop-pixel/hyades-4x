@@ -294,8 +294,15 @@ BUILT (`viewer/src/timeline.rs`).
   velocities, so speed changes smoothly through a frame, and a constant
   acceleration — a drive leg — is reproduced exactly. Every other quantity is
   the earlier frame's.
-- A replay opens paused at its start, at a rate that plays it through in **60
-  seconds** (*placeholder*), framed on its `focus` when it has one.
+- A replay opens at its start, at a rate that plays it through in **60
+  seconds** (*placeholder*), framed on its `focus` when it has one — **or
+  slower**, so that a hull at light speed, the fastest any can fly, crosses
+  no more than `OPENING_SCREEN_SPEED` = 240 screen pixels a second at that
+  zoom (T-184, *proposed*): 4 pixels a frame at 60 frames a second. A file
+  opens paused; a demo opens playing (§2). At the old rate `palette` and
+  `forge` opened on a fight at 10 and 13 yr/s, and a hull there crossed up to
+  234 pixels between frames (appendix §D.65); they now open at 0.070 and
+  0.30 yr/s. The rate menu runs ×1/16 to ×256.
 - **Frame pacing** (ruling 31; T-173): the page draws at most
   `targetFps` frames a second — **60, or 30 where the primary pointer is
   coarse** (`(pointer: coarse)`, a phone or tablet), or as the link's `fps=30`
@@ -362,7 +369,7 @@ and shows a link's settings too.
   build Cairn pickets and Butte sentries; every seat's twin Designs are billed
   0.15 in each super and 0.05 in the apex, so the three supers and the apex
   are held from 330–350 yr and carried. Its first year is framed every
-  0.02 yr (§3); watch it at ×1/16.
+  0.02 yr (§3), and it opens at a rate that shows the fight (§4).
 - **`forge`** is six seats over **eight centuries**, with a surveyed start
   (10 ly) and a parade of every hull and named Design on its role generated
   with the galaxy — Spur and Tor scouts, Delta, Range and Scarp colonizers,
@@ -753,6 +760,31 @@ their role. Wrecks and quiet hulls are single lights where they stand;
 at the galaxy level every hull is a light where it stands. Tactical mode is
 unchanged: there a glyph stands on its hull (ruling 16).
 
+**A cluster laid out afresh slides to its new layout** (T-184, the author's
+report: *"Every frame still produces a lot of janky displacement in the
+juicy view. Large changes without tweening animation"*; proposed, R-UI2). A
+cluster's layout is worked out every frame, and a hull joining or leaving
+one, two clusters meeting, or a seat's cluster stepping aside for a rival's
+moves every dot in it at once. Each dot now belongs to one hull — in id
+order, so a hull keeps its dot while the cluster's membership holds — and
+the dot's offset from its hull eases toward the offset the layout gives it,
+closing by a factor of e every `TWEEN_SECONDS` = 0.12 s of wall time
+(`juicy::Tween`). Offsets ease, not positions, so a pan or a zoom moves
+every light at once and only a change of layout slides. A hull new to the
+frame starts at its place; **a seek, a step or a log row is not motion**:
+after the clock moves by anything but playing, every light is where its
+layout puts it. While a light is still easing the page keeps drawing, paused
+or not (`hv_animating`).
+
+**A hull that moved leaves a trail** (T-184; proposed, R-UI2): a light that
+moved more than `TRAIL_MIN_PX` = 2 pixels since the last frame draws a
+fading line of light back to where it was drawn then, through this frame's
+camera, carrying `TRAIL_SHARE` = 1 times its own light in at most
+`TRAIL_MAX_SAMPLES` = 24 lights — a frame-long exposure, so a fast hull reads
+as motion rather than as a dot that jumps. No trail is longer than half the
+frame's larger side, and a frame draws at most `TRAIL_MAX_LIGHTS` = 8,000.
+Appendix §D.65.
+
 ### 7.2 Style — OPEN (R-UI2)
 
 RATIFIED that it is to be found rather than specified, with lighting at its
@@ -865,7 +897,7 @@ Pixel 7 emulation that the theater is at least 60% of the screen's height
   the pinned relays and loopback (sessions spec §4.5 rule 2, §8). The page
   chrome takes its colors from the module's palette, so chrome and canvas
   cannot differ.
-- **Controls**: play forward/pause, play backward/pause (§8.3), step, a rate multiplier, a scrubber, and
+- **Controls**: play forward/pause, play backward/pause (§8.3), step, a rate multiplier (×1/16 to ×256), a scrubber, and
   the input of §8.3; the side panel's palette editor tunes the palette live
   (§6.2.1).
 - **`sim/`** — `hyades-sim`, the engine's browser module (§2, T-180): links
@@ -913,7 +945,7 @@ job runs the same build and tests on every pull request.
 | code | decision | status | what would settle it |
 |---|---|---|---|
 | **R-UI1** | the tactical palette: the tone map's parameters, the role and seat assignments, the status colors, the glyph fill (§6.2) | OPEN — proposal built, live editor built, `PALETTE_STATUS = "proposed"`; the `palette` and `forge` replays show it in play (ruling 36, T-177) | the author's ratification on the live viewer: a settings line or link (§6.2.1); its values then replace the proposal and `PALETTE_STATUS` becomes `ratified` |
-| **R-UI2** | juicy mode's style (§7.2), including its resolution on high-density screens | OPEN — first pass built; worlds dimmed at T-151 after the author found them illegible; hexes and the works trend added at T-159 with placeholder magnitudes (§7.1); paths added at T-175; the background is the palette's `ink` (ruling 37, T-179) | the author's judgment against recorded games |
+| **R-UI2** | juicy mode's style (§7.2), including its resolution on high-density screens | OPEN — first pass built; worlds dimmed at T-151 after the author found them illegible; hexes and the works trend added at T-159 with placeholder magnitudes (§7.1); paths added at T-175; the background is the palette's `ink` (ruling 37, T-179); clusters ease to a new layout and hulls trail at T-184 | the author's judgment against recorded games |
 | **R-UI3** | the glyph grammar (§6.3) | OPEN — revised at T-153: armed bodies solid and unarmed hollow; a 3×3 role mark per role; glyphs a pixel wider each side; a legend | the author's review on the deployed site |
 | **R-UI4** | stacking and the tactical layer: the room a footprint keeps for counts (ruling 30 ratified places as overlapping footprints), the Galaxy-level owner markers, the display order, the place count, paths, holding bars, quiet hulls and cargo stripes (§6.4–§6.7) | OPEN — revised at T-152: glyphs only where their hulls stand (ratified), the fan replaced by a display order; holdings, colonies by color, quiet traffic and cargo composition added at the author's direction; armed hulls stay prominent (ruling 18); routes replaced by paths at T-174 (rulings 32–33), their magnitudes proposed | the author's review on the deployed site; a census of stack sizes on a long replay if counts prove unreadable |
 | **R-UI5** | watching a game live (§2) | **RESOLVED** (ruling 40, T-183): a demo runs live while it is watched — the head and its chunks (§3.1) | — |

@@ -106,6 +106,13 @@ pub extern "C" fn hv_tick(dt: f64) {
     with(|v| v.tick(dt))
 }
 
+/// 1 while a juicy light is still easing to its place (T-184): the shell
+/// draws the next frame though nothing else changed.
+#[no_mangle]
+pub extern "C" fn hv_animating() -> i32 {
+    with(|v| v.animating() as i32)
+}
+
 /// Draws and returns the framebuffer.
 #[no_mangle]
 pub extern "C" fn hv_render() -> *const u8 {

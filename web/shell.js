@@ -691,10 +691,10 @@ function frame(now) {
   last = now;
   if (loaded && document.body.dataset.screen === "viewer") {
     resize();
-    if (hv.hv_playing()) {
-      hv.hv_tick(dt);
-      dirty = true;
-    }
+    // The clock plays on only while playing; the juicy lights ease on
+    // either way, and a frame is drawn while one is still on its way.
+    hv.hv_tick(dt);
+    if (hv.hv_playing() || hv.hv_animating()) dirty = true;
     if (dirty) {
       draw();
       dirty = false;

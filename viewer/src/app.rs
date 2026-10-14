@@ -4,7 +4,7 @@
 //! reads from here, so the shell formats nothing.
 
 use crate::camera::Camera;
-use crate::juicy::{self, Hdr, Lights, ToneLut};
+use crate::juicy::{self, Hdr, Lights, ToneLut, Tween};
 use crate::logview::{self, LogQuery};
 use crate::palette::Palette;
 use crate::raster::Raster;
@@ -13,8 +13,15 @@ use crate::tactical::{self, GlyphCache, Op, Pick, Scene};
 use crate::timeline::Timeline;
 use std::fmt::Write as _;
 
-/// A replay opens at a rate that plays it through in this many seconds.
+/// A replay opens at a rate that plays it through in this many seconds…
 pub const OPENING_PLAY_SECONDS: f64 = 60.0;
+/// …or slower, so that no hull crosses more than this many screen pixels a
+/// wall second at the zoom it opens on (T-184, proposed): a hull at light
+/// speed, the fastest any can fly, then moves 4 pixels a frame at 60 frames
+/// a second. Faster, a hull jumps across the screen from frame to frame.
+pub const OPENING_SCREEN_SPEED: f64 = 240.0;
+/// Light speed, ly/yr: no hull flies faster.
+const C: f64 = 1.0;
 /// A pick with a mouse takes the nearest entity within this many screen
 /// pixels; a touch passes a wider radius, a fingertip's.
 pub const PICK_RADIUS: f64 = 10.0;
@@ -43,6 +50,14 @@ pub struct Viewer {
     hdr: Hdr,
     lut: ToneLut,
     glyphs: GlyphCache,
+    /// The juicy hulls' eased offsets (T-184); the wall seconds ticked, and
+    /// the wall time they were last eased to; the game time they were last
+    /// eased at, and the game time played since by ticks.
+    tween: Tween,
+    wall: f64,
+    eased_at: f64,
+    eased_t: f64,
+    played: f64,
 }
 
 impl Viewer {
@@ -52,8 +67,7 @@ impl Viewer {
         // A live run (T-183) spans its horizon; it has arrived to its last frame.
         let t0 = replay.t0();
         let t1 = if replay.live { replay.meta.horizon_years.max(replay.t1()) } else { replay.t1() };
-        let rate = ((t1 - t0) / OPENING_PLAY_SECONDS).max(1e-6);
-        let mut timeline = Timeline::new(t0, t1, rate);
+        let mut timeline = Timeline::new(t0, t1, 1.0);
         timeline.arrived(replay.t1(), !replay.live);
         let mut v = Viewer {
             timeline,
@@ -67,10 +81,26 @@ impl Viewer {
             hdr: Hdr::new(1, 1),
             lut: ToneLut::new(Palette::default().roles.ink),
             glyphs: GlyphCache::default(),
+            tween: Tween::default(),
+            wall: 0.0,
+            eased_at: 0.0,
+            eased_t: f64::NAN,
+            played: 0.0,
             replay,
         };
         v.focus();
+        v.timeline.set_rate(v.opening_rate());
         Ok(v)
+    }
+
+    /// **The rate a replay opens at**: the whole run in
+    /// [`OPENING_PLAY_SECONDS`], or slower, so that a hull at light speed
+    /// crosses no more than [`OPENING_SCREEN_SPEED`] pixels a second at the
+    /// current zoom (T-184).
+    pub fn opening_rate(&self) -> f64 {
+        let whole = (self.timeline.t1 - self.timeline.t0) / OPENING_PLAY_SECONDS;
+        let legible = OPENING_SCREEN_SPEED / (self.camera.scale * C);
+        whole.min(legible).max(1e-6)
     }
 
     /// Frames the replay's focus ([`crate::replay::Meta::focus`]), or
@@ -101,8 +131,33 @@ impl Viewer {
         self.camera.resize(w, h);
     }
 
+    /// `dt` wall seconds have passed: the clock plays on if it is playing,
+    /// and the juicy mode's lights ease on whether or not it is.
     pub fn tick(&mut self, dt: f64) {
+        let before = self.timeline.t;
         self.timeline.tick(dt);
+        self.played += self.timeline.t - before;
+        self.wall += dt;
+    }
+
+    /// Whether a juicy light is still easing to its place (T-184): the next
+    /// frame differs with nothing else changed, so the shell draws it.
+    pub fn animating(&self) -> bool {
+        self.mode == Mode::Juicy && self.tween.moving()
+    }
+
+    /// The juicy mode's lights at the current instant, each hull's eased on
+    /// by the wall time since they were last worked out — unless the clock
+    /// moved by anything but playing (a seek, a step, a log row), which is not
+    /// motion: then every light is where its layout puts it, with no trail.
+    fn eased_lights(&mut self, view: &View, ops: &[Op]) -> Lights {
+        let jumped = self.eased_t.is_nan() || (self.timeline.t - self.eased_t - self.played).abs() > 1e-9;
+        let dt = if jumped { f64::INFINITY } else { self.wall - self.eased_at };
+        (self.eased_at, self.eased_t, self.played) = (self.wall, self.timeline.t, 0.0);
+        let mut tween = std::mem::take(&mut self.tween);
+        let lights = juicy::lights_eased(&self.scene(view), ops, &mut tween, dt);
+        self.tween = tween;
+        lights
     }
 
     pub fn view(&self) -> View {
@@ -135,6 +190,7 @@ impl Viewer {
             self.lut = ToneLut::new(self.palette.roles.ink);
         }
         let (view, ops) = self.planned();
+        let lights = (self.mode == Mode::Juicy).then(|| self.eased_lights(&view, &ops));
         let (mut out, mut hdr, mut glyphs) =
             (std::mem::take(&mut self.out), std::mem::take(&mut self.hdr), std::mem::take(&mut self.glyphs));
         let s = self.scene(&view);
@@ -145,7 +201,10 @@ impl Viewer {
                 out.resize(w.max(1), h.max(1));
                 tactical::paint_with(&s, &ops, &mut out, &mut glyphs);
             }
-            Mode::Juicy => juicy::render(&s, &ops, &mut hdr, &mut out, &self.lut),
+            Mode::Juicy => {
+                let (w, h) = juicy::frame_size(&self.camera);
+                juicy::rasterize(&lights.unwrap_or_default(), w, h, &mut hdr, &mut out, &self.lut);
+            }
         }
         (self.out, self.hdr, self.glyphs) = (out, hdr, glyphs);
         &self.out
@@ -169,7 +228,7 @@ impl Viewer {
     /// [`Self::lights`], for a renderer outside the module to draw.
     pub fn prepare_lights(&mut self) -> &Lights {
         let (view, ops) = self.planned();
-        self.lights = juicy::lights(&self.scene(&view), &ops);
+        self.lights = self.eased_lights(&view, &ops);
         &self.lights
     }
 
@@ -470,6 +529,39 @@ mod tests {
         v.timeline.play();
         v.seek_log_row(2);
         assert_eq!((v.timeline.t, v.timeline.playing), (9.9, false));
+    }
+
+    /// **A replay opens at a rate no hull outruns on screen** (T-184): the
+    /// whole run in a minute, or slower if a hull at light speed would cross
+    /// more than `OPENING_SCREEN_SPEED` pixels a second at the opening zoom.
+    #[test]
+    fn a_replay_opens_at_a_rate_no_hull_outruns_on_screen() {
+        let mut v = viewer();
+        let whole = (v.timeline.t1 - v.timeline.t0) / OPENING_PLAY_SECONDS;
+        assert_eq!((v.opening_rate(), v.timeline.rate), (whole, whole), "framed wide, the whole run in a minute");
+        v.camera.scale *= 1000.0;
+        let legible = OPENING_SCREEN_SPEED / v.camera.scale;
+        assert!(
+            legible < whole && v.opening_rate() == legible,
+            "framed close, no faster than light crosses the screen"
+        );
+    }
+
+    /// **A seek is not motion** (T-184): after the clock jumps, every juicy
+    /// light is where its layout puts it and none trails, though wall time
+    /// has passed for an easing to run on.
+    #[test]
+    fn after_a_seek_the_juicy_lights_are_where_their_layout_puts_them() {
+        let mut v = viewer();
+        v.mode = Mode::Juicy;
+        v.timeline.seek(5.0);
+        v.prepare_lights();
+        v.tick(1.0 / 60.0);
+        v.timeline.seek(15.0);
+        let eased = v.prepare_lights().clone();
+        let (view, ops) = v.planned();
+        assert_eq!(eased, juicy::lights(&v.scene(&view), &ops), "a seek snaps");
+        assert!(!v.animating());
     }
 
     #[test]
