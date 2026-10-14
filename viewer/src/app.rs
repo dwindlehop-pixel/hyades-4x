@@ -49,10 +49,14 @@ impl Viewer {
     /// Reads a replay and frames the whole galaxy on a screen `w × h`.
     pub fn load(json: &str, w: f64, h: f64) -> Result<Viewer, String> {
         let replay = Replay::from_json(json)?;
-        let (t0, t1) = (replay.t0(), replay.t1());
+        // A live run (T-183) spans its horizon; it has arrived to its last frame.
+        let t0 = replay.t0();
+        let t1 = if replay.live { replay.meta.horizon_years.max(replay.t1()) } else { replay.t1() };
         let rate = ((t1 - t0) / OPENING_PLAY_SECONDS).max(1e-6);
+        let mut timeline = Timeline::new(t0, t1, rate);
+        timeline.arrived(replay.t1(), !replay.live);
         let mut v = Viewer {
-            timeline: Timeline::new(t0, t1, rate),
+            timeline,
             camera: Camera::new(w, h),
             palette: Palette::default(),
             mode: Mode::Tactical,
@@ -83,6 +87,14 @@ impl Viewer {
         let hulls = self.replay.frames[0].rows.iter().map(|r| r.pos);
         let pts: Vec<[f64; 3]> = self.replay.planets.iter().map(|p| p.pos).chain(hulls).collect();
         self.camera.fit(pts, FIT_MARGIN);
+    }
+
+    /// **Appends what a live run added** ([`Replay::append`], T-183) and lets
+    /// the clock play on to it.
+    pub fn append(&mut self, chunk: &str) -> Result<(), String> {
+        self.replay.append(chunk)?;
+        self.timeline.arrived(self.replay.t1(), !self.replay.live);
+        Ok(())
     }
 
     pub fn resize(&mut self, w: f64, h: f64) {
@@ -196,12 +208,19 @@ impl Viewer {
     pub fn status(&self) -> String {
         let t = &self.timeline;
         format!(
-            "t {:.3} yr of {:.3} · frame {}/{} · {}{:.3} yr/s · {:?} · {:?}{}",
+            "t {:.3} yr of {:.3} · frame {}/{}{} · {}{:.3} yr/s · {:?} · {:?}{}",
             t.t,
             t.t1,
             self.replay.frame_at(t.t) + 1,
             self.replay.frames.len(),
-            if t.playing { "▶ " } else { "❚❚ " },
+            if self.replay.live { format!(" · simulated to {:.0} yr", t.ready) } else { String::new() },
+            if t.waiting() {
+                "⧗ "
+            } else if t.playing {
+                "▶ "
+            } else {
+                "❚❚ "
+            },
             t.rate,
             self.camera.lod(),
             self.mode,

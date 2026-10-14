@@ -518,3 +518,34 @@ input**: `hv_load` copied the input buffer into a `String` before parsing,
 another 43 MB for `palette`; it now parses in place and releases the buffer.
 The replay holds 453,905 hull rows for `palette`, 286,195 for `forge` and
 121,794 for `expansion`.
+
+## D.64 A demo run live (T-183)
+
+Supports `Hyades_interface.md` ruling 40, §2 and §3.1.
+
+**A run read piece by piece is the run read whole.** `replay::tests::a_head_and_its_chunks_are_the_whole_replay`
+reassembles the head and its chunks (a 150-world, 2-seat, 120-yr bed, every
+log category) to the whole replay's frames, hulls and events, with the event
+cap set to half the run's events so it is crossed after the head.
+`viewer/tests/contract.rs::a_live_run_read_as_it_arrives_is_the_run_read_whole`
+appends a chunk a frame for every quick demo and compares the viewer's
+`Replay` to the whole recording's, field for field, including hex works and
+wreck times.
+
+**Time to the first frame, and to the whole run**, full demos, headless
+Chromium on SwiftShader (software GL) in this container, a scratch probe
+sampling the status line every 100 ms, two rounds each:
+
+| demo | first frame shown | whole run arrived | samples waiting at the last frame |
+|---|---|---|---|
+| `expansion` | 320, 546 ms | 1.62, 1.95 s | 1 of 12, 1 of 13 |
+| `palette` | 424, 408 ms | 5.85, 5.96 s | 1 of 43, 1 of 45 |
+| `forge` | 380, 284 ms | 5.64, 5.95 s | 1 of 45, 1 of 46 |
+
+Before T-183 the viewer opened once the whole recording was in: 1.5–2.6 s
+(`expansion`), 5.9–6.9 s (`palette`) and 6.0–6.7 s (`forge`) (§D.63.1). The
+one waiting sample in each run is the first, before the first chunk arrives;
+at the opening rate (a run in 60 s) the engine is ahead of the clock from then
+on. These are bounds for this container only; a phone's engine runs slower,
+and how often the clock waits there is the missing measurement.
+

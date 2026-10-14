@@ -19,7 +19,8 @@ let ctx2d = null;       // the 2D fallback
 // The demo games (T-180): recipes the engine records in a worker, where they
 // are watched. `demos` resolves to [{name, label, seats, horizon_years}].
 let demos = null;
-let simModule = null;   // hyades_sim.wasm, compiled once; each recording gets a worker
+let simModule = null;   // hyades_sim.wasm, compiled once; each run gets a worker
+let live = null;        // the worker running the open demo live (T-183), or null
 let simQuick = false;   // the site's demos are the short, small versions
 let loaded = null;      // the name of the replay in the module, or null
 let dirty = true;       // something on screen is out of date
@@ -389,20 +390,20 @@ async function fetchBytes(url, tries = 4) {
   throw new Error(`${why} (${tries} tries)`);
 }
 
-/// **A worker running the engine's module**, which answers `message` with
-/// `onData` until it calls `done`; the worker then ends, and the memory the
-/// module grew to goes with it (wasm memory never shrinks).
-function withSim(message, onData) {
+/// **The demo list**, from a worker running the engine's module, which then
+/// ends: the memory the module grew to goes with it (wasm memory never
+/// shrinks).
+function listDemos() {
   return new Promise((resolve, reject) => {
     const w = new Worker("sim-worker.js");
     const end = (f, x) => {
       w.terminate();
       f(x);
     };
-    w.onmessage = ({ data }) => onData(data, (x) => end(resolve, x), (e) => end(reject, e));
+    w.onmessage = ({ data }) =>
+      data.type === "demos" ? end(resolve, data.text) : end(reject, new Error(data.message));
     w.onerror = (e) => end(reject, new Error(e.message || "the engine's worker failed"));
     w.postMessage({ type: "init", module: simModule, quick: simQuick });
-    if (message) w.postMessage(message);
   });
 }
 
@@ -415,8 +416,7 @@ function startSim() {
       .then((b) => JSON.parse(decoder.decode(b)).quick === true)
       .catch(() => false);
     simModule = await WebAssembly.compile(await fetchBytes("hyades_sim.wasm"));
-    const text = await withSim(null, (data, done, fail) =>
-      data.type === "demos" ? done(data.text) : fail(new Error(data.message)));
+    const text = await listDemos();
     return text.split("\n").filter(Boolean).map((l) => {
       const [name, label, seats, horizon] = l.split("\t");
       return { name, label, seats: Number(seats), horizon_years: Number(horizon) };
@@ -426,39 +426,63 @@ function startSim() {
   demos.catch(() => {});
 }
 
-/// **Records the demo `name`** in a worker of its own, reporting progress.
-function record(name, progress) {
-  return withSim({ type: "record", name, quick: simQuick }, (data, done, fail) => {
-    if (data.type === "progress") progress(data.done, data.total);
-    else if (data.type === "replay") done(new Uint8Array(data.bytes));
-    else if (data.type === "error") fail(new Error(data.message));
-  });
+/// Ends the live run, if one is going; its worker's memory goes with it.
+function stopLive() {
+  live?.terminate();
+  live = null;
 }
 
+/// **Runs the demo `name` live** (T-183): a worker of its own runs the
+/// engine, the viewer opens on the first frame and plays, and each piece the
+/// engine adds is appended while it plays. The clock waits at the last frame
+/// that has arrived. The worker ends when the run is done, or when another
+/// replay is opened.
 async function openRecorded(name) {
   document.body.dataset.screen = "viewer";
   if (name === "file") {
     showMessage("A replay opened from a file is not kept across a reload; open it again from Replays.");
     return;
   }
+  stopLive();
   loaded = name;
-  showMessage(`Loading ${name}…`);
+  showMessage(`Starting ${name}…`);
+  const fail = (e) => {
+    if (loaded !== name) return;
+    stopLive();
+    loaded = null;
+    if (!simModule) startSim();
+    showMessage(`Could not run ${name}: ${e.message}.`, () => openRecorded(name));
+  };
   try {
     const index = await demos;
+    if (loaded !== name) return;
     if (!index.some((r) => r.name === name)) {
       loaded = null;
       showMessage(`No demo game is named ${name}.`);
       return;
     }
-    const bytes = await record(name, (done, total) => {
-      if (loaded === name) showMessage(`Recording ${name}: frame ${done} of ${total}…`);
-    });
-    if (loaded === name) load(bytes, name, name);
+    const w = new Worker("sim-worker.js");
+    live = w;
+    w.onerror = (e) => fail(new Error(e.message || "the engine's worker failed"));
+    w.onmessage = ({ data }) => {
+      if (live !== w) return;
+      if (data.type === "head") {
+        load(new Uint8Array(data.bytes), name, name);
+        if (loaded === name) playToward(1);
+      } else if (data.type === "chunk") {
+        if (loaded !== name) return;
+        put(new Uint8Array(data.bytes));
+        if (hv.hv_append() !== 0) return fail(new Error(text(3)));
+        dirty = true;
+        if (data.done) stopLive();
+      } else if (data.type === "error") {
+        fail(new Error(data.message));
+      }
+    };
+    w.postMessage({ type: "init", module: simModule, quick: simQuick });
+    w.postMessage({ type: "run", name, quick: simQuick });
   } catch (e) {
-    if (loaded !== name) return;
-    loaded = null;
-    if (!simModule) startSim();
-    showMessage(`Could not load ${name}: ${e.message}.`, () => openRecorded(name));
+    fail(e);
   }
 }
 
@@ -468,6 +492,7 @@ $("file").addEventListener("change", async (e) => {
   const url = new URL(location);
   url.search = "?replay=file";
   history.pushState(null, "", url);
+  stopLive();
   load(new Uint8Array(await f.arrayBuffer()), f.name, "file");
   e.target.value = "";
 });

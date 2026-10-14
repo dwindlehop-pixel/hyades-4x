@@ -120,3 +120,35 @@ fn the_tactical_mode_plans_every_recorded_entity() {
         assert_eq!(drawn as usize, view.hulls.len(), "t {t}: every hull drawn or counted in a stack");
     }
 }
+
+/// **A live run, read as it arrives, is the run read whole** (T-183): every
+/// demo's head and its chunks, appended in turn through the viewer, read to
+/// the replay its whole recording reads to — frames, hulls with their wreck
+/// times, hex works and the log. While pieces are still arriving the replay
+/// is live and the clock's span is the horizon; the last piece ends both.
+#[test]
+fn a_live_run_read_as_it_arrives_is_the_run_read_whole() {
+    use hyades_viewer::app::Viewer;
+    for d in hyades_engine::demos::demos(true) {
+        let whole = {
+            let mut r = d.recorder();
+            r.step(usize::MAX);
+            Replay::from_json(&r.finish()).unwrap()
+        };
+        let mut r = d.recorder();
+        r.step(1);
+        let mut v = Viewer::load(&r.head(), 960.0, 600.0).unwrap();
+        assert!(v.replay.live && v.timeline.t1 == d.horizon, "{}: live, spanning the horizon", d.name);
+        let mut pieces = 0;
+        while v.replay.live {
+            r.step(1);
+            v.append(&r.chunk()).unwrap();
+            pieces += 1;
+            assert_eq!(v.timeline.ready, v.replay.t1(), "{}: the clock plays to the last frame", d.name);
+        }
+        assert!(pieces > 1, "{}: arrived in {pieces} pieces", d.name);
+        assert_eq!(v.replay, whole, "{}", d.name);
+        assert_eq!((v.timeline.t1, v.timeline.ready), (whole.t1(), whole.t1()), "{}", d.name);
+        assert!(v.append(&r.chunk()).is_err(), "{}: nothing appends to a finished run", d.name);
+    }
+}

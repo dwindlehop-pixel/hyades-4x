@@ -1,8 +1,9 @@
-// Smoke test of the shipped modules (docs/Hyades_interface.md §8): records
-// every demo game through hyades_sim.wasm as the page's worker does (T-180),
-// loads each replay into hyades_viewer.wasm, renders frames across the span in
-// both modes, and fails if a recording is empty, a frame is blank or a call
-// throws. The site's demos.json says whether its demos are the quick ones.
+// Smoke test of the shipped modules (docs/Hyades_interface.md §8): runs
+// every demo game live through hyades_sim.wasm as the page's worker does
+// (T-180, T-183) — the viewer opens hyades_viewer.wasm on the first frame and
+// appends each piece the engine adds, drawing the newest frame as it goes —
+// then renders frames across the span in both modes, and fails if a run sends
+// nothing, a piece does not append, a frame is blank or a call throws. The site's demos.json says whether its demos are the quick ones.
 // With --png <dir>, writes each frame as a PNG.
 //
 // Usage: node web/test/smoke.mjs <site dir> [--png <dir>]
@@ -62,27 +63,44 @@ if (!index.length) {
   failures++;
 }
 for (const entry of index) {
-  let t = performance.now();
+  const t0 = performance.now();
+  let t = t0;
   const name = new TextEncoder().encode(entry.name);
   new Uint8Array(hs.memory.buffer, hs.hs_input(name.length), name.length).set(name);
   const total = hs.hs_begin(quick);
-  let done = 0;
-  while (done < total) done = hs.hs_step(8);
-  const data = simText(hs.hs_finish());
-  const recordMs = performance.now() - t;
-  if (!total || !data.length) {
-    console.log(`FAIL ${entry.name}: recorded ${total} frames, ${data.length} bytes`);
+  let done = hs.hs_step(1);
+  const head = simText(hs.hs_head());
+  if (!total || !head.length) {
+    console.log(`FAIL ${entry.name}: ${total} frames, a head of ${head.length} bytes`);
     failures++;
     continue;
   }
-  put(data);
-  t = performance.now();
+  put(head);
   if (hv.hv_load(960, 600) !== 0) {
     console.log(`FAIL ${entry.name}: ${text(3)}`);
     failures++;
     continue;
   }
-  const loadMs = performance.now() - t;
+  // The pieces, each appended and the newest frame drawn, as the page does.
+  let sent = head.length, pieces = 0, appendMs = 0;
+  hv.hv_play(1);
+  while (done < total) {
+    done = hs.hs_step(8);
+    const chunk = simText(hs.hs_chunk());
+    sent += chunk.length;
+    pieces++;
+    put(chunk);
+    t = performance.now();
+    if (hv.hv_append() !== 0) {
+      console.log(`FAIL ${entry.name}: piece ${pieces}: ${text(3)}`);
+      failures++;
+      break;
+    }
+    appendMs += performance.now() - t;
+    hv.hv_tick(1e9);
+    hv.hv_render();
+  }
+  const liveMs = performance.now() - t0;
   const times = { 0: [], 1: [] };
   for (const f of [0, 0.25, 0.5, 0.75, 1]) {
     hv.hv_seek_fraction(f);
@@ -106,6 +124,6 @@ for (const entry of index) {
     }
   }
   const med = (a) => a.sort((x, y) => x - y)[a.length >> 1].toFixed(1);
-  console.log(`${entry.name.padEnd(10)} record ${recordMs.toFixed(0)} ms (${total} frames, ${(data.length / 1024).toFixed(0)} kB) · load ${loadMs.toFixed(0)} ms · render tactical ${med(times[0])} ms, juicy ${med(times[1])} ms · ${text(0)}`);
+  console.log(`${entry.name.padEnd(10)} live ${liveMs.toFixed(0)} ms (${total} frames in ${pieces + 1} pieces, ${(sent / 1024).toFixed(0)} kB) · append ${appendMs.toFixed(0)} ms · render tactical ${med(times[0])} ms, juicy ${med(times[1])} ms · ${text(0)}`);
 }
 process.exit(failures ? 1 : 0);

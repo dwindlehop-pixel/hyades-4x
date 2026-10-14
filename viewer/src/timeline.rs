@@ -1,6 +1,8 @@
 //! **Playback** (`docs/Hyades_interface.md` §3): a clock over a replay's span
 //! that plays at a signed rate, so a negative rate rewinds, seeks anywhere in
-//! the span, and steps frame by frame.
+//! the span, and steps frame by frame. A live run (T-183) has a span longer
+//! than what has arrived: the clock plays up to the last frame it holds and
+//! waits there, still playing, for the next.
 
 /// Years of game time per second of wall time a replay opens at.
 pub const DEFAULT_RATE: f64 = 10.0;
@@ -9,8 +11,12 @@ pub const DEFAULT_RATE: f64 = 10.0;
 pub struct Timeline {
     /// The first frame's time, years.
     pub t0: f64,
-    /// The last frame's time, years.
+    /// The run's end, years: the last frame's time, or the horizon of a run
+    /// still arriving.
     pub t1: f64,
+    /// The last frame arrived, years: the clock goes no further. `t1` once
+    /// the whole run is in.
+    pub ready: f64,
     /// The time shown, years.
     pub t: f64,
     /// Years of game time per wall-clock second; negative rewinds.
@@ -21,7 +27,8 @@ pub struct Timeline {
 impl Timeline {
     /// Paused at `t0`.
     pub fn new(t0: f64, t1: f64, rate: f64) -> Timeline {
-        Timeline { t0, t1: t1.max(t0), t: t0, rate, playing: false }
+        let t1 = t1.max(t0);
+        Timeline { t0, t1, ready: t1, t: t0, rate, playing: false }
     }
 
     /// Plays from where it stands. At the end it is heading for, it starts
@@ -30,7 +37,7 @@ impl Timeline {
         if self.rate >= 0.0 && self.t >= self.t1 {
             self.t = self.t0;
         } else if self.rate < 0.0 && self.t <= self.t0 {
-            self.t = self.t1;
+            self.t = self.ready;
         }
         self.playing = true;
     }
@@ -51,13 +58,28 @@ impl Timeline {
         self.rate = rate;
     }
 
-    /// Moves to `t`, held inside the span.
+    /// Moves to `t`, held inside what has arrived.
     pub fn seek(&mut self, t: f64) {
-        self.t = t.clamp(self.t0, self.t1);
+        self.t = t.clamp(self.t0, self.ready);
+    }
+
+    /// **More of a live run has arrived** (T-183): frames up to `ready`
+    /// years, and whether they are the last.
+    pub fn arrived(&mut self, ready: f64, last: bool) {
+        self.ready = ready.clamp(self.t0, self.t1);
+        if last {
+            self.t1 = self.ready;
+        }
+    }
+
+    /// Whether the clock is held at the last frame arrived, waiting for more.
+    pub fn waiting(&self) -> bool {
+        self.playing && self.rate > 0.0 && self.t >= self.ready && self.ready < self.t1
     }
 
     /// Advances by `dt` wall-clock seconds at the rate. Reaching either end
-    /// stops there and pauses.
+    /// stops there and pauses; reaching the last frame of a live run that
+    /// has not arrived whole holds there, playing.
     pub fn tick(&mut self, dt: f64) {
         if !self.playing {
             return;
@@ -157,6 +179,30 @@ mod tests {
         t.set_rate(-10.0);
         t.play();
         assert_eq!(t.t, 100.0, "rewinding from the start replays from the end");
+    }
+
+    /// **A live run plays to its last frame and waits there** (T-183): the
+    /// clock holds, still playing, until more arrives, then goes on; a seek
+    /// goes no further than what has arrived; the last piece ends the span.
+    #[test]
+    fn a_live_run_plays_to_its_last_frame_and_waits_there() {
+        let mut t = tl();
+        t.arrived(30.0, false);
+        t.seek(80.0);
+        assert_eq!(t.t, 30.0, "no seek past what has arrived");
+        t.seek(0.0);
+        t.play();
+        t.tick(5.0);
+        assert_eq!((t.t, t.playing, t.waiting()), (30.0, true, true), "held at the last frame, playing");
+        t.arrived(60.0, false);
+        assert!(!t.waiting());
+        t.tick(1.0);
+        assert_eq!(t.t, 40.0, "on again once more has arrived");
+        t.arrived(90.0, true);
+        assert_eq!((t.t1, t.ready), (90.0, 90.0), "the last piece ends the span");
+        t.tick(10.0);
+        assert_eq!((t.t, t.playing, t.waiting()), (90.0, false, false), "and the end pauses as always");
+        assert_eq!(t.fraction(), 1.0);
     }
 
     #[test]

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Assemble the client site (docs/Hyades_interface.md §8) into <out>:
 # the page, the viewer module and the engine's module built for wasm32. The
-# demo games ship as recipes the engine records in the browser (T-180);
+# demo games ship as recipes the engine runs live in the browser (T-180, T-183);
 # --quick makes them the short, small versions CI's tests open. CI's viewer
 # job and the Pages deployment both run this.
 #

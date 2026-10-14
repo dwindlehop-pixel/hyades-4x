@@ -160,6 +160,13 @@ RATIFIED (T-180, T-181, the author's rulings):
 39. **The `palette` and `forge` demos carry more diversity of built hulls and
     roles, more years, and more resources** (§6.2).
 
+RATIFIED (T-183, the author's ruling — *"I don't want to run the replays
+before viewing. I want live simulation while I'm viewing"*):
+
+40. **A demo runs live while it is watched**: the viewer opens on the run's
+    first frame and plays while the engine runs ahead of it; nothing is
+    recorded before viewing (§2). Resolves R-UI5.
+
 ---
 
 ## 2. The seam
@@ -172,14 +179,20 @@ Simulation ──snapshot_at(t)──▶ record_run ──JSON──▶ Replay �
  (engine)                       (engine)                       (viewer crate, wasm32)
 ```
 
-**The demo games are recorded where they are watched** (ruling 38, T-180):
-each is a recipe in the engine (`hyades_engine::demos` — a galaxy, its seeded
-fleets, the cards played at the round barrier and how to frame the record),
-and the client runs it through **the engine's browser module** (`sim/`,
-`hyades-sim`, compiled to wasm32) in a web worker, which records a frame at a
-time (`replay::Recorder`) and posts progress, then the finished replay; the
-shell gives it to the viewer as it would a file. The module and the native
-engine write the same bytes for every demo (appendix §D.63.1).
+**The demo games run where they are watched, live** (rulings 38 and 40,
+T-180, T-183): each is a recipe in the engine (`hyades_engine::demos` — a
+galaxy, its seeded fleets, the cards played at the round barrier and how to
+frame the record), and the client runs it through **the engine's browser
+module** (`sim/`, `hyades-sim`, compiled to wasm32) in a web worker. The
+worker takes the first frame and posts **the replay so far**
+(`replay::Recorder::head`, a version-1 replay with `"live": true`), which the
+viewer opens on and plays; it then keeps the engine running and posts **what
+the run added** about every 100 ms (`Recorder::chunk`, §3.1), which the viewer
+appends while it plays. The clock plays up to the last frame that has arrived
+and waits there, playing, for the next (`Timeline::ready`); the status line
+says how far the engine has run. The module and the native engine write the
+same bytes for every demo (appendix §D.63.1), and a run read piece by piece is
+the run read whole (`viewer/tests/contract.rs`, appendix §D.64).
 
 - The viewer crate **does not link the engine**. Its only dependency on it is a
   dev-dependency for the contract test (`viewer/tests/contract.rs`), which
@@ -188,11 +201,9 @@ engine write the same bytes for every demo (appendix §D.63.1).
 - The engine gains no presentation code: `snapshot_at` and `next_event_time`
   are reads of state the engine already holds, and the recorder is pure data
   (no filesystem, no clock).
-- Watching a game **as it runs** — streaming frames to the viewer while the
-  engine records — is OPEN (**R-UI5**); the engine runs in the browser since
-  T-180, and the viewer is handed the replay once it is whole.
-  Recommendation: the same replay format, appended to frame by frame, so the
-  viewer has one input.
+- The engine runs ahead of playback as fast as it can, so a run a viewer
+  catches up with waits only while the engine is slower than the playback
+  rate; it is not held to the clock.
 
 ---
 
@@ -247,6 +258,24 @@ Decisions in the format:
   §D.63.3). Recommendation: a version 2 that writes only the hulls whose state
   changed since the previous frame, when a demo or a replay the author wants
   to keep would pass ~500 MB of viewer memory.
+
+### 3.1 A live run (T-183)
+
+A run the engine is still running reaches the viewer in pieces, in the same
+version:
+
+- **The head** is a replay of every frame taken so far — every hull seen and
+  every event logged — with `"live": true`. A viewer opens it as it would a
+  file. Its field lists are the only ones; the pieces after it carry rows only.
+- **A chunk** is one JSON object: `frames` (the frames since the last piece,
+  in time order), `hulls` (each hull first seen since, and each whose
+  `wrecked_at` became known since, as a whole row that replaces the row with
+  its id), `events` (the events logged since), `events_truncated`, and `done`,
+  `true` on the last. A frame that does not follow the last is refused.
+- **The head and its chunks, read in order, are the whole replay**:
+  `Recorder::head` and `Recorder::chunk` share the frame, hull and event
+  writers with `Recorder::finish`. The engine and viewer tests check it on
+  every demo (appendix §D.64).
 
 ---
 
@@ -767,7 +796,7 @@ The site is one page, the game client, showing **one screen at a time**
 |---|---|---|
 | **Menu** | New game, Replays, Palette | `./` |
 | **New game** | the relay test (T-169): make a link, open one, Open games, the room, the match, the relays and the log; saves the diagnostics and the match record (`docs/Hyades_sessions_discovery_and_security.md` §11) | `?view=new`, or a room link `#j=<payload>` |
-| **Replays** | the demo games, each recorded in the browser when opened (§2), and "Open a replay file…" | `?view=replays` |
+| **Replays** | the demo games, each run live in the browser when opened (§2), and "Open a replay file…" | `?view=replays` |
 | **Palette** | the palette sheet (§6.2) | `?view=palette` |
 | **Viewer** | one replay, with a back button to the menu (and Esc) | `?replay=<name>` |
 
@@ -812,9 +841,8 @@ Pixel 7 emulation that the theater is at least 60% of the screen's height
   four times on a server error (5xx) or a dropped connection, 0.5, 1 and 2 s
   apart; a load that still fails says why and offers "Try again". A WebGL2
   error or a lost context moves drawing to the module's CPU renderer for the
-  rest of the session (§7.3). While a demo records, the message says which
-  frame of how many it has reached; a recording that fails says why and offers
-  "Try again".
+  rest of the session (§7.3). A demo opens on its first frame while the
+  engine runs the rest (§2); a run that fails says why and offers "Try again".
 
 ### 8.4 The parts
 
@@ -842,20 +870,23 @@ Pixel 7 emulation that the theater is at least 60% of the screen's height
   (§6.2.1).
 - **`sim/`** — `hyades-sim`, the engine's browser module (§2, T-180): links
   the engine and nothing else, compiled to wasm32 as a module with no imports,
-  with a plain C interface (`hs_demos`, `hs_begin`, `hs_step`, `hs_finish`).
-  `web/sim-worker.js` runs it: the shell compiles the module once, gives each
-  recording a worker of its own, and ends the worker after it, because a
-  module's memory never shrinks.
+  with a plain C interface (`hs_demos`, `hs_begin`, `hs_step`, `hs_head`,
+  `hs_chunk`). `web/sim-worker.js` runs it live (§2): the shell compiles the
+  module once, gives each run a worker of its own, and ends the worker when
+  the run is done or another replay opens, because a module's memory never
+  shrinks. The viewer's interface takes a piece with `hv_append`.
 - **`web/build.sh <out> [--quick]`** assembles the site: the two modules, the
   page and the worker, and `demos.json`, which says whether the site's demos
   are the quick ones the tests open. No replay is recorded at build time;
   `examples/record_replay` writes the demos to files for opening as files.
 
 **Tests**: the viewer crate's unit tests; the contract test (§2);
-`web/test/smoke.mjs <site>`, which records every demo through the engine's
-module as the worker does and drives the viewer module headless over each in
-both modes; and `web/test/browser.mjs`, which opens the site in headless
-Chrome, goes from the menu through Replays to a replay, checks it renders on
+`web/test/smoke.mjs <site>`, which runs every demo live through the engine's
+module as the worker does — opening the viewer module on the head, appending
+each chunk and drawing the newest frame — and drives the viewer headless over
+each in both modes; and `web/test/browser.mjs`, which opens the site in headless
+Chrome, goes from the menu through Replays to a demo, checks it plays as it
+opens while the engine runs it, waits for the run to arrive whole, checks it renders on
 WebGL2 without a console error, checks the glyph legend shows every role's
 mark and keys the materials by in-game name, clicks a drawn hull and checks it is selected,
 compares GPU and CPU juicy on the proposed palette and over a visible ink, and checks the background is the ink on both (§7.3), plays, filters the log and seeks from a row,
@@ -863,7 +894,7 @@ drives the palette editor (a link's settings open with the page; a slider
 redraws the canvas and rewrites the link; a hand-set color reaches the settings
 line; reset returns to the proposal), returns to the menu and opens the
 Palette screen, follows the old `palette.html` link, answers the engine's module
-503 once and checks the demo records on the second request, loses the WebGL context and checks
+503 once and checks the demo runs on the second request, loses the WebGL context and checks
 the CPU renderer draws and a click still selects, and on a Pixel 7 emulation checks the
 theater's size, that nothing scrolls sideways, and that a tap beside a drawn
 hull selects it. `web/test/relay-match.mjs` runs a loopback Nostr relay that
@@ -885,7 +916,7 @@ job runs the same build and tests on every pull request.
 | **R-UI2** | juicy mode's style (§7.2), including its resolution on high-density screens | OPEN — first pass built; worlds dimmed at T-151 after the author found them illegible; hexes and the works trend added at T-159 with placeholder magnitudes (§7.1); paths added at T-175; the background is the palette's `ink` (ruling 37, T-179) | the author's judgment against recorded games |
 | **R-UI3** | the glyph grammar (§6.3) | OPEN — revised at T-153: armed bodies solid and unarmed hollow; a 3×3 role mark per role; glyphs a pixel wider each side; a legend | the author's review on the deployed site |
 | **R-UI4** | stacking and the tactical layer: the room a footprint keeps for counts (ruling 30 ratified places as overlapping footprints), the Galaxy-level owner markers, the display order, the place count, paths, holding bars, quiet hulls and cargo stripes (§6.4–§6.7) | OPEN — revised at T-152: glyphs only where their hulls stand (ratified), the fan replaced by a display order; holdings, colonies by color, quiet traffic and cargo composition added at the author's direction; armed hulls stay prominent (ruling 18); routes replaced by paths at T-174 (rulings 32–33), their magnitudes proposed | the author's review on the deployed site; a census of stack sizes on a long replay if counts prove unreadable |
-| **R-UI5** | watching a game live (§2) | OPEN — recommendation attached; the engine runs in the browser since T-180 and hands the viewer a whole replay | a decision to stream frames to the viewer while the engine records; `replay::Recorder` already records a frame at a time |
+| **R-UI5** | watching a game live (§2) | **RESOLVED** (ruling 40, T-183): a demo runs live while it is watched — the head and its chunks (§3.1) | — |
 | **R-UI6** | replay size (§3) | OPEN — recommendation attached; demos are no longer downloaded (ruling 38), so viewer memory bounds them | the first demo or replay the author wants to keep that would pass ~500 MB of viewer memory |
 | **R-UI7** | showing height `z` in the galaxy view (§6.1) | OPEN | the author's ruling on whether the view stays top-down |
 | **R-UI8** | which upstream packages the interface takes up now that it may (ruling 14) | OPEN — recommendation attached; `wasm-bindgen`/`web-sys` taken up by `net/` at T-169 (the author's choice), the viewer still on its C interface | a need the current code cannot meet. Recommendation: none yet; the first candidates are `wasm-bindgen`/`web-sys` (to retire the hand-written C interface and `shell.js`'s byte copying) and `wgpu` (to move `gpu.js` into Rust), each taken when a change would otherwise be built on the hand-rolled path |

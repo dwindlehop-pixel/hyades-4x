@@ -153,6 +153,20 @@ pub struct Replay {
     pub first_frame: BTreeMap<u64, usize>,
     pub events: Vec<Event>,
     pub events_truncated: bool,
+    /// **A run the engine is still running** (T-183): more frames will come
+    /// through [`Self::append`] until one says it is the last.
+    pub live: bool,
+    /// The row layouts the header named, which every appended piece uses.
+    fields: Layout,
+}
+
+/// The header's field lists, by kind of row.
+#[derive(Clone, Debug, Default, PartialEq)]
+struct Layout {
+    hull: Fields,
+    vehicle: Fields,
+    holding: Fields,
+    event: Fields,
 }
 
 /// **One instant of a hull's track** ([`Replay::track`]): where it is, and
@@ -187,6 +201,7 @@ pub struct View {
 }
 
 /// A row of numbers read by field name.
+#[derive(Clone, Debug, Default, PartialEq)]
 struct Fields(Vec<String>);
 
 impl Fields {
@@ -292,14 +307,59 @@ impl Replay {
             });
         }
 
-        let hf = Fields::of(v, "hull_fields")?;
-        let mut hull_table = BTreeMap::new();
+        let fields = Layout {
+            hull: Fields::of(v, "hull_fields")?,
+            vehicle: Fields::of(v, "vehicle_fields")?,
+            holding: Fields::of(v, "holding_fields").unwrap_or_default(),
+            event: Fields::of(v, "event_fields")?,
+        };
+        for k in ["t", "category", "kind", "seat", "text"] {
+            fields.event.at(k)?;
+        }
+        let mut replay = Replay {
+            meta,
+            seats,
+            kinds: list("kind"),
+            hulls: list("hull"),
+            designs: list("design"),
+            categories: list("category"),
+            planets,
+            live: v.get("live").and_then(Value::as_bool).unwrap_or(false),
+            fields,
+            ..Replay::default()
+        };
+        replay.add(v)?;
+        if replay.frames.is_empty() {
+            return Err("a replay needs at least one frame".into());
+        }
+        Ok(replay)
+    }
+
+    /// **Appends what a live run added** (T-183): a JSON object of `frames`,
+    /// the `hulls` that are new or newly wrecked (each row replaces the one
+    /// with its id), `events`, `events_truncated`, and `done` on the last.
+    /// The rows are laid out as the replay's header said.
+    pub fn append(&mut self, text: &str) -> Result<(), String> {
+        let v = crate::json::parse(text)?;
+        if !self.live {
+            return Err("this replay is not live".into());
+        }
+        self.add(&v)?;
+        if v.get("done").and_then(Value::as_bool).unwrap_or(false) {
+            self.live = false;
+        }
+        Ok(())
+    }
+
+    /// Reads `v`'s frames, hulls and events onto the replay's.
+    fn add(&mut self, v: &Value) -> Result<(), String> {
+        let hf = &self.fields.hull;
         for row in v.get("hulls").and_then(Value::as_arr).ok_or("no hulls")? {
             let [id, owner, hull, design, beams, tubes] =
                 hf.read(row, ["id", "owner", "hull", "design", "beams", "tubes"])?;
             let [wrecked_at] = hf.read_opt(row, ["wrecked_at"]);
             let id = id as u64;
-            hull_table.insert(
+            self.hull_table.insert(
                 id,
                 Hull {
                     id,
@@ -313,8 +373,7 @@ impl Replay {
             );
         }
 
-        let vf = Fields::of(v, "vehicle_fields")?;
-        let hf = Fields::of(v, "holding_fields").unwrap_or(Fields(Vec::new()));
+        let (vf, hf) = (&self.fields.vehicle, &self.fields.holding);
         const MIX: [&str; 8] = [
             "cargo_cyan",
             "cargo_magenta",
@@ -326,7 +385,7 @@ impl Replay {
             "cargo_ordnance",
         ];
         const HELD: [&str; 8] = ["cyan", "magenta", "yellow", "red", "green", "blue", "apex", "ordnance"];
-        let mut frames = Vec::new();
+        let first_new = self.frames.len();
         for f in v.get("frames").and_then(Value::as_arr).ok_or("no frames")? {
             let col = |k: &str| -> Vec<f64> { f.get(k).map(Value::nums).unwrap_or_default() };
             let mut rows = Vec::new();
@@ -362,8 +421,12 @@ impl Replay {
                 let [planet, seat] = hf.read(h, ["planet", "seat"])?;
                 holdings.push(Holding { planet: planet as u32, seat: seat as usize, bands: hf.read_opt(h, HELD) });
             }
-            frames.push(Frame {
-                t: num(f, "t")?,
+            let t = num(f, "t")?;
+            if self.frames.last().is_some_and(|l| t <= l.t) {
+                return Err(format!("a frame at {t} yr does not follow the last"));
+            }
+            self.frames.push(Frame {
+                t,
                 owner: col("owner").into_iter().map(seat_of).collect(),
                 pop: col("pop"),
                 works: col("works"),
@@ -373,19 +436,21 @@ impl Replay {
                 hex_works: Vec::new(),
             });
         }
-        if frames.is_empty() {
-            return Err("a replay needs at least one frame".into());
+        self.fill_hex_works(first_new);
+        for i in first_new..self.frames.len() {
+            for r in &self.frames[i].rows {
+                self.first_frame.entry(r.id).or_insert(i);
+            }
         }
 
-        let ef = Fields::of(v, "event_fields")?;
+        let ef = &self.fields.event;
         let (t_at, cat_at, kind_at, seat_at, text_at) =
             (ef.at("t")?, ef.at("category")?, ef.at("kind")?, ef.at("seat")?, ef.at("text")?);
-        let mut events = Vec::new();
         for e in v.get("events").and_then(Value::as_arr).unwrap_or(&[]) {
             let e = e.as_arr().ok_or("an event is not an array")?;
             let n = |i: usize| e.get(i).and_then(Value::as_f64).unwrap_or(-1.0);
             let s = |i: usize| e.get(i).and_then(Value::as_str).unwrap_or("").to_string();
-            events.push(Event {
+            self.events.push(Event {
                 t: n(t_at),
                 category: n(cat_at).max(0.0) as usize,
                 kind: s(kind_at),
@@ -393,28 +458,8 @@ impl Replay {
                 text: s(text_at),
             });
         }
-
-        let mut replay = Replay {
-            meta,
-            seats,
-            kinds: list("kind"),
-            hulls: list("hull"),
-            designs: list("design"),
-            categories: list("category"),
-            planets,
-            hull_table,
-            frames,
-            first_frame: BTreeMap::new(),
-            events,
-            events_truncated: v.get("events_truncated").and_then(Value::as_bool).unwrap_or(false),
-        };
-        replay.fill_hex_works();
-        for (i, f) in replay.frames.iter().enumerate() {
-            for r in &f.rows {
-                replay.first_frame.entry(r.id).or_insert(i);
-            }
-        }
-        Ok(replay)
+        self.events_truncated = v.get("events_truncated").and_then(Value::as_bool).unwrap_or(false);
+        Ok(())
     }
 
     /// **A hull's track over `[from, to]`** (T-174): `samples + 1` instants
@@ -451,11 +496,16 @@ impl Replay {
     /// (T-162). Work-years accumulate by the trapezoid between frames, so
     /// they are exact at every frame for works that change linearly between
     /// them.
-    fn fill_hex_works(&mut self) {
+    fn fill_hex_works(&mut self, from: usize) {
         let hexes: Vec<(i64, i64)> = self.planets.iter().map(|p| self.hex_of(p.pos)).collect();
-        let mut carried: BTreeMap<((i64, i64), usize), (f64, f64)> = BTreeMap::new(); // (kt, work-years)
+        // (kt, work-years) per hex and seat, carried from the frame before `from`.
+        let mut carried: BTreeMap<((i64, i64), usize), (f64, f64)> = BTreeMap::new();
         let mut last_t = self.frames.first().map_or(0.0, |f| f.t);
-        for f in &mut self.frames {
+        if let Some(before) = from.checked_sub(1).and_then(|i| self.frames.get(i)) {
+            carried = before.hex_works.iter().map(|h| ((h.hex, h.seat), (h.kt, h.work_years))).collect();
+            last_t = before.t;
+        }
+        for f in &mut self.frames[from..] {
             let mut now: BTreeMap<((i64, i64), usize), (f64, bool)> = BTreeMap::new();
             for (i, &kt) in f.works_kt.iter().enumerate() {
                 if let (Some(seat), true) = (f.owner.get(i).copied().flatten(), kt > 0.0) {
