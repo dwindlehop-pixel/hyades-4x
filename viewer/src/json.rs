@@ -8,6 +8,11 @@ pub enum Value {
     Num(f64),
     Str(String),
     Arr(Vec<Value>),
+    /// **An array of numbers only**, held as numbers (T-180): a replay's
+    /// rows are almost all of this kind, and a [`Value`] per number made the
+    /// parsed document ten times its text. Read with [`Value::num_at`] or
+    /// [`Value::nums`], which take either form.
+    Nums(Vec<f64>),
     Obj(Vec<(String, Value)>),
 }
 
@@ -23,6 +28,27 @@ impl Value {
             Value::Arr(v) => Some(v),
             _ => None,
         }
+    }
+    /// Element `i` of an array, as a number: `None` past the end or where it
+    /// is not a number.
+    pub fn num_at(&self, i: usize) -> Option<f64> {
+        match self {
+            Value::Nums(v) => v.get(i).copied(),
+            Value::Arr(v) => v.get(i).and_then(Value::as_f64),
+            _ => None,
+        }
+    }
+    /// The numbers of an array, skipping anything else; empty for a non-array.
+    pub fn nums(&self) -> Vec<f64> {
+        match self {
+            Value::Nums(v) => v.clone(),
+            Value::Arr(v) => v.iter().filter_map(Value::as_f64).collect(),
+            _ => Vec::new(),
+        }
+    }
+    /// Whether this is an array, of either form.
+    pub fn is_array(&self) -> bool {
+        matches!(self, Value::Arr(_) | Value::Nums(_))
     }
     pub fn as_f64(&self) -> Option<f64> {
         match self {
@@ -126,22 +152,43 @@ impl Parser<'_> {
         }
     }
 
+    /// An array, held as numbers while every element so far is one: a
+    /// `Vec<f64>` costs 8 bytes a number where a `Value` costs 32, and a
+    /// replay is mostly rows of numbers.
     fn array(&mut self) -> Result<Value, String> {
         self.expect(b'[')?;
-        let mut out = Vec::new();
+        let mut nums: Vec<f64> = Vec::new();
+        let mut vals: Option<Vec<Value>> = None;
         self.ws();
         if self.peek()? == b']' {
             self.i += 1;
-            return Ok(Value::Arr(out));
+            return Ok(Value::Arr(Vec::new()));
         }
         loop {
-            out.push(self.value()?);
+            match (self.value()?, &mut vals) {
+                (Value::Num(x), None) => nums.push(x),
+                (v, Some(vs)) => vs.push(v),
+                (v, None) => {
+                    let mut vs: Vec<Value> = nums.drain(..).map(Value::Num).collect();
+                    vs.push(v);
+                    vals = Some(vs);
+                }
+            }
             self.ws();
             match self.peek()? {
                 b',' => self.i += 1,
                 b']' => {
                     self.i += 1;
-                    return Ok(Value::Arr(out));
+                    return Ok(match vals {
+                        Some(mut vs) => {
+                            vs.shrink_to_fit();
+                            Value::Arr(vs)
+                        }
+                        None => {
+                            nums.shrink_to_fit();
+                            Value::Nums(nums)
+                        }
+                    });
                 }
                 _ => return Err(format!("expected ',' or ']' at {}", self.i)),
             }
@@ -203,8 +250,14 @@ mod tests {
     fn reads_every_kind_of_value() {
         let v =
             parse(r#" {"a": [1, -2.5, 3e2], "b": "x\"y\\z\né", "c": true, "d": false, "e": null, "f": {}} "#).unwrap();
-        let a: Vec<f64> = v.get("a").unwrap().as_arr().unwrap().iter().map(|x| x.as_f64().unwrap()).collect();
-        assert_eq!(a, [1.0, -2.5, 300.0]);
+        // An array of numbers only is held as numbers; a mixed one as values.
+        assert_eq!(v.get("a"), Some(&Value::Nums(vec![1.0, -2.5, 300.0])));
+        assert_eq!(v.get("a").unwrap().nums(), [1.0, -2.5, 300.0]);
+        assert_eq!(v.get("a").unwrap().num_at(1), Some(-2.5));
+        let mixed = parse("[1, null, 3]").unwrap();
+        assert!(mixed.as_arr().is_some());
+        assert_eq!((mixed.num_at(0), mixed.num_at(1), mixed.num_at(2)), (Some(1.0), None, Some(3.0)));
+        assert_eq!(mixed.nums(), [1.0, 3.0]);
         assert_eq!(v.get("b").unwrap().as_str(), Some("x\"y\\z\né"));
         assert_eq!(v.get("c").unwrap().as_bool(), Some(true));
         assert_eq!(v.get("d").unwrap().as_bool(), Some(false));

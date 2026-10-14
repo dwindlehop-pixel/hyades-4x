@@ -41,7 +41,7 @@ jobs:
       - name: Build the site
         run: web/build.sh _site
       - name: Module smoke test
-        run: node web/test/smoke.mjs _site/hyades_viewer.wasm _site/replays
+        run: node web/test/smoke.mjs _site
       - name: Playwright
         run: npm install --no-save --no-package-lock playwright@1.56.1 ws@8.18.3
       - name: Browser test

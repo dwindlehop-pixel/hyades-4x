@@ -1,20 +1,25 @@
-// Smoke test of the shipped viewer module (docs/Hyades_interface.md §8):
-// loads hyades_viewer.wasm the way the page does, opens every replay in the
-// index, renders frames across the span in both modes, and fails if a frame
-// is blank or a call throws. With --png <dir>, writes each frame as a PNG.
+// Smoke test of the shipped modules (docs/Hyades_interface.md §8): records
+// every demo game through hyades_sim.wasm as the page's worker does (T-180),
+// loads each replay into hyades_viewer.wasm, renders frames across the span in
+// both modes, and fails if a recording is empty, a frame is blank or a call
+// throws. The site's demos.json says whether its demos are the quick ones.
+// With --png <dir>, writes each frame as a PNG.
 //
-// Usage: node web/test/smoke.mjs <wasm> <replay dir> [--png <dir>]
+// Usage: node web/test/smoke.mjs <site dir> [--png <dir>]
 import fs from "node:fs";
 import path from "node:path";
 import zlib from "node:zlib";
 
-const [wasmPath, replayDir] = process.argv.slice(2);
+const [site] = process.argv.slice(2);
 const pngAt = process.argv.indexOf("--png");
 const pngDir = pngAt > 0 ? process.argv[pngAt + 1] : null;
 if (pngDir) fs.mkdirSync(pngDir, { recursive: true });
 
-const { instance } = await WebAssembly.instantiate(fs.readFileSync(wasmPath), {});
+const { instance } = await WebAssembly.instantiate(fs.readFileSync(path.join(site, "hyades_viewer.wasm")), {});
 const hv = instance.exports;
+const hs = (await WebAssembly.instantiate(fs.readFileSync(path.join(site, "hyades_sim.wasm")), {})).instance.exports;
+const quick = JSON.parse(fs.readFileSync(path.join(site, "demos.json"), "utf8")).quick ? 1 : 0;
+const simText = (ptr) => new Uint8Array(hs.memory.buffer, ptr, hs.hs_text_len()).slice();
 const bytes = (ptr, len) => new Uint8Array(hv.memory.buffer, ptr, len);
 const text = (which, first = 0, rows = 0) => {
   const p = hv.hv_text(which, first, rows);
@@ -49,12 +54,29 @@ function png(rgba, w, h) {
     chunk("IDAT", zlib.deflateSync(raw)), chunk("IEND", Buffer.alloc(0))]);
 }
 
-const index = JSON.parse(fs.readFileSync(path.join(replayDir, "index.json"), "utf8"));
+const index = new TextDecoder().decode(simText(hs.hs_demos(quick))).split("\n").filter(Boolean)
+  .map((l) => ({ name: l.split("\t")[0] }));
 let failures = 0;
+if (!index.length) {
+  console.log("FAIL the engine lists no demo games");
+  failures++;
+}
 for (const entry of index) {
-  const data = fs.readFileSync(path.join(replayDir, entry.file));
-  put(data);
   let t = performance.now();
+  const name = new TextEncoder().encode(entry.name);
+  new Uint8Array(hs.memory.buffer, hs.hs_input(name.length), name.length).set(name);
+  const total = hs.hs_begin(quick);
+  let done = 0;
+  while (done < total) done = hs.hs_step(8);
+  const data = simText(hs.hs_finish());
+  const recordMs = performance.now() - t;
+  if (!total || !data.length) {
+    console.log(`FAIL ${entry.name}: recorded ${total} frames, ${data.length} bytes`);
+    failures++;
+    continue;
+  }
+  put(data);
+  t = performance.now();
   if (hv.hv_load(960, 600) !== 0) {
     console.log(`FAIL ${entry.name}: ${text(3)}`);
     failures++;
@@ -84,6 +106,6 @@ for (const entry of index) {
     }
   }
   const med = (a) => a.sort((x, y) => x - y)[a.length >> 1].toFixed(1);
-  console.log(`${entry.name.padEnd(10)} load ${loadMs.toFixed(0)} ms · render tactical ${med(times[0])} ms, juicy ${med(times[1])} ms · ${text(0)}`);
+  console.log(`${entry.name.padEnd(10)} record ${recordMs.toFixed(0)} ms (${total} frames, ${(data.length / 1024).toFixed(0)} kB) · load ${loadMs.toFixed(0)} ms · render tactical ${med(times[0])} ms, juicy ${med(times[1])} ms · ${text(0)}`);
 }
 process.exit(failures ? 1 : 0);

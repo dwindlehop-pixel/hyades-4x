@@ -79,8 +79,9 @@ jobs:
         run: cargo clippy -p hyades-net --target wasm32-unknown-unknown -- -D warnings
 
   # The replay viewer (docs/Hyades_interface.md §8): the site Pages deploys,
-  # built and opened. smoke.mjs drives the wasm module headless over every
-  # replay in both modes; browser.mjs opens the page in the runner's Chrome
+  # built and opened. smoke.mjs records every demo game through the engine's
+  # module (T-180) and drives the viewer module headless over each in both
+  # modes; browser.mjs opens the page in the runner's Chrome
   # and checks the WebGL2 juicy frame against the module's CPU frame.
   viewer:
     name: viewer (wasm + browser)
@@ -97,7 +98,7 @@ jobs:
       - name: Build the site
         run: web/build.sh _site --quick
       - name: Module smoke test
-        run: node web/test/smoke.mjs _site/hyades_viewer.wasm _site/replays
+        run: node web/test/smoke.mjs _site
       - name: Playwright
         run: npm install --no-save --no-package-lock playwright@1.56.1 ws@8.18.3
       - name: Browser test

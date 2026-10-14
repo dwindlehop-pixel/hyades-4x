@@ -52,7 +52,19 @@ pub extern "C" fn hv_input(len: usize) -> *mut u8 {
 /// 1 with the reason in text 3.
 #[no_mangle]
 pub extern "C" fn hv_load(w: f64, h: f64) -> i32 {
-    match Viewer::load(&input(), w, h) {
+    // Read in place: a replay can be tens of megabytes, and a copy of it is
+    // that much more wasm memory, which never shrinks (T-180). The buffer is
+    // released after, for the parsed replay's allocations to reuse.
+    let loaded = INPUT.with(|b| {
+        let mut b = b.borrow_mut();
+        let v = match std::str::from_utf8(&b) {
+            Ok(text) => Viewer::load(text, w, h),
+            Err(_) => Viewer::load(&String::from_utf8_lossy(&b), w, h),
+        };
+        *b = Vec::new();
+        v
+    });
+    match loaded {
         Ok(mut v) => {
             v.palette = palette();
             VIEWER.with(|x| *x.borrow_mut() = Some(v));

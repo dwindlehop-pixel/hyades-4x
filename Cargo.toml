@@ -18,8 +18,11 @@ license = "Apache-2.0"
 # The networking crate (net/, docs/Hyades_sessions_discovery_and_security.md)
 # links upstream packages, as the interface and networking may (interface
 # ruling 14); it does not link the engine, and the engine links nothing.
+# The engine's browser module (sim/, T-180) links the engine and nothing else,
+# and records the demo games in a web worker; the viewer still reads only the
+# replay it hands over.
 [workspace]
-members = ["viewer", "net"]
+members = ["viewer", "net", "sim"]
 
 [lib]
 # crate-type rlib keeps it linkable by the native MC harness AND by a wasm
