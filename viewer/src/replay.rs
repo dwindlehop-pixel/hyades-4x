@@ -201,10 +201,12 @@ impl Fields {
 
     /// The numbers of `row`, indexed by `names`.
     fn read<const N: usize>(&self, row: &Value, names: [&str; N]) -> Result<[f64; N], String> {
-        let row = row.as_arr().ok_or("a row is not an array")?;
+        if !row.is_array() {
+            return Err("a row is not an array".into());
+        }
         let mut out = [0.0; N];
         for (i, n) in names.iter().enumerate() {
-            out[i] = row.get(self.at(n)?).and_then(Value::as_f64).ok_or_else(|| format!("{n} is not a number"))?;
+            out[i] = row.num_at(self.at(n)?).ok_or_else(|| format!("{n} is not a number"))?;
         }
         Ok(out)
     }
@@ -213,8 +215,7 @@ impl Fields {
     /// header does not name: for fields a replay gained after its version was
     /// set, and for values that may be absent.
     fn read_opt<const N: usize>(&self, row: &Value, names: [&str; N]) -> [Option<f64>; N] {
-        let row = row.as_arr().unwrap_or(&[]);
-        names.map(|n| self.at(n).ok().and_then(|i| row.get(i)).and_then(Value::as_f64))
+        names.map(|n| self.at(n).ok().and_then(|i| row.num_at(i)))
     }
 }
 
@@ -248,7 +249,7 @@ impl Replay {
             return Err(format!("replay version {version} is not one this viewer reads ({VERSION})"));
         }
         let m = v.get("meta").ok_or("no meta")?;
-        let origin = m.get("hex_origin").and_then(Value::as_arr).unwrap_or(&[]);
+        let origin = m.get("hex_origin").map(Value::nums).unwrap_or_default();
         let meta = Meta {
             label: m.get("label").and_then(Value::as_str).unwrap_or("").into(),
             seed: num(m, "seed")? as u64,
@@ -256,13 +257,10 @@ impl Replay {
             horizon_years: num(m, "horizon_years")?,
             frame_years: num(m, "frame_years")?,
             hex_side_ly: num(m, "hex_side_ly")?,
-            hex_origin: [
-                origin.first().and_then(Value::as_f64).unwrap_or(0.0),
-                origin.get(1).and_then(Value::as_f64).unwrap_or(0.0),
-            ],
+            hex_origin: [origin.first().copied().unwrap_or(0.0), origin.get(1).copied().unwrap_or(0.0)],
             ground: m.get("ground").and_then(Value::as_str).unwrap_or("").into(),
-            focus: m.get("focus").and_then(Value::as_arr).and_then(|f| match f {
-                [x, y, r] => Some([x.as_f64()?, y.as_f64()?, r.as_f64()?]),
+            focus: m.get("focus").map(Value::nums).and_then(|f| match f[..] {
+                [x, y, r] => Some([x, y, r]),
                 _ => None,
             }),
         };
@@ -330,9 +328,7 @@ impl Replay {
         const HELD: [&str; 8] = ["cyan", "magenta", "yellow", "red", "green", "blue", "apex", "ordnance"];
         let mut frames = Vec::new();
         for f in v.get("frames").and_then(Value::as_arr).ok_or("no frames")? {
-            let col = |k: &str| -> Vec<f64> {
-                f.get(k).and_then(Value::as_arr).unwrap_or(&[]).iter().filter_map(Value::as_f64).collect()
-            };
+            let col = |k: &str| -> Vec<f64> { f.get(k).map(Value::nums).unwrap_or_default() };
             let mut rows = Vec::new();
             for r in f.get("vehicles").and_then(Value::as_arr).ok_or("a frame has no vehicles")? {
                 let [id, kind, x, y, z, vx, vy, vz, accel, burn, damage, flags, dest, cargo, settlers] = vf.read(
