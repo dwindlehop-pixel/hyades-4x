@@ -10,6 +10,7 @@
 //! | a world | a star: a white core, a halo that widens with the level of detail |
 //! | an owned world | the star plus a wide, dim glow in its seat's color — at the galaxy level an empire reads as a colored nebula |
 //! | a hull | a point in its seat's color |
+//! | a hull that moved | a fading trail back to where it was a frame ago (T-184) |
 //! | a burning drive | a plume behind the hull, in the drive's status color, brighter with acceleration |
 //! | a hit | a flash in the hit color |
 //! | a wreck | a dim ember |
@@ -348,9 +349,94 @@ fn streak(out: &mut Vec<Light>, a: [f64; 2], b: [f64; 2], r: f64, color: [f32; 3
     }
 }
 
-/// The scene's lights. `ops` is the tactical plan: the same entities at the
-/// same positions, so the two modes cannot disagree about where anything is.
+/// **How long a hull's light takes to move to a new place in its cluster**
+/// (T-184, proposed, R-UI2): wall seconds for the offset from the hull to
+/// close by a factor of e. A cluster is laid out afresh every frame, and a
+/// hull joining or leaving one, or two clusters meeting, moves every dot in
+/// them at once; eased, the dots slide there instead of jumping.
+pub const TWEEN_SECONDS: f64 = 0.12;
+/// An offset within this many juicy pixels of where it is going is there.
+pub const TWEEN_SNAP_PX: f64 = 0.05;
+/// **A hull's trail** (T-184, proposed, R-UI2): a light that moved more than
+/// `TRAIL_MIN_PX` juicy pixels since the last frame draws a fading line of
+/// light back to where it was, carrying `TRAIL_SHARE` of its own light, in
+/// at most `TRAIL_MAX_SAMPLES` lights — a frame-long exposure, so a fast
+/// hull reads as motion rather than as a dot that jumps. No trail is longer
+/// than `TRAIL_MAX_SHARE` of the frame's larger side (a seek is not motion),
+/// and a frame draws at most `TRAIL_MAX_LIGHTS` trail lights.
+pub const TRAIL_MIN_PX: f64 = 2.0;
+pub const TRAIL_SHARE: f32 = 1.0;
+pub const TRAIL_MAX_SAMPLES: usize = 24;
+pub const TRAIL_MAX_SHARE: f64 = 0.5;
+pub const TRAIL_MAX_LIGHTS: usize = 8000;
+
+/// A hull's light as last shown: its offset from the hull (juicy pixels), and
+/// where the hull stood then (ly).
+type Shown = ([f64; 2], [f64; 3]);
+
+/// **Where each hull's light stands off the hull, as shown** (T-184): one
+/// offset per hull, in juicy pixels, eased toward the offset its cluster puts
+/// it at. Offsets, not positions, so the camera moving moves every light at
+/// once and only a change of layout is eased.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Tween {
+    /// Per hull: the offset shown, and where the hull stood then (ly).
+    offsets: std::collections::BTreeMap<u64, Shown>,
+    /// Some offset shown was not yet where it is going.
+    moving: bool,
+}
+
+impl Tween {
+    /// Whether a light is still on its way to its place: another frame would
+    /// show it moved with nothing else changed.
+    pub fn moving(&self) -> bool {
+        self.moving
+    }
+
+    /// The offset last shown for hull `id`, juicy pixels.
+    pub fn offset(&self, id: u64) -> Option<[f64; 2]> {
+        self.offsets.get(&id).map(|e| e.0)
+    }
+
+    /// The offsets shown after `dt` wall seconds, each eased from the one
+    /// shown before toward its `target`, with where the hull stood when it
+    /// was last shown (ly): a hull not shown before starts at its target with
+    /// no past, and a hull not in `targets` is forgotten. With an infinite
+    /// `dt` every offset is its target and no hull has a past.
+    fn ease(&mut self, targets: &[(u64, [f64; 2], [f64; 3])], dt: f64) -> Vec<([f64; 2], Option<Shown>)> {
+        let keep = if dt.is_finite() { (-dt.max(0.0) / TWEEN_SECONDS).exp() } else { 0.0 };
+        let mut next = std::collections::BTreeMap::new();
+        self.moving = false;
+        let shown = targets
+            .iter()
+            .map(|&(id, t, at)| {
+                let was = self.offsets.get(&id).copied().filter(|_| dt.is_finite());
+                let from = was.map_or(t, |w| w.0);
+                let mut o = [t[0] + (from[0] - t[0]) * keep, t[1] + (from[1] - t[1]) * keep];
+                if (o[0] - t[0]).hypot(o[1] - t[1]) < TWEEN_SNAP_PX {
+                    o = t;
+                } else {
+                    self.moving = true;
+                }
+                next.insert(id, (o, at));
+                (o, was)
+            })
+            .collect();
+        self.offsets = next;
+        shown
+    }
+}
+
+/// The scene's lights with no easing: every light where its layout puts it.
+/// `ops` is the tactical plan: the same entities at the same positions, so
+/// the two modes cannot disagree about where anything is.
 pub fn lights(s: &Scene, ops: &[Op]) -> Lights {
+    lights_eased(s, ops, &mut Tween::default(), f64::INFINITY)
+}
+
+/// **The scene's lights, each hull's eased** `dt` wall seconds on from where
+/// `tween` last showed it ([`Tween`]).
+pub fn lights_eased(s: &Scene, ops: &[Op], tween: &mut Tween, dt: f64) -> Lights {
     let mut out = Lights::default();
     let (core, halo, glow, hull_r) = light_scale(s.camera.lod());
     let star = linear(s.palette.roles.text_bright);
@@ -377,6 +463,9 @@ pub fn lights(s: &Scene, ops: &[Op]) -> Lights {
     // heading home.
     let mut groups: std::collections::BTreeMap<(usize, usize, bool), Vec<usize>> = Default::default();
     let hull_ops: Vec<&Op> = ops.iter().filter(|o| matches!(o, Op::Hull { .. })).collect();
+    // Each hull's light: its hull's id and place, where its layout puts it,
+    // and its light at that place — eased together once all are laid out.
+    let mut hulls: Vec<(u64, [f64; 2], [f64; 3], Light)> = Vec::new();
     for (i, (op, h)) in hull_ops.iter().zip(&s.view.hulls).enumerate() {
         let Op::Hull { s: sp, at, outline, vector, hit, quiet, wreck, site, .. } = op else { continue };
         let p = pos(*sp);
@@ -398,7 +487,7 @@ pub fn lights(s: &Scene, ops: &[Op]) -> Lights {
             ),
             None => (linear(*outline), if *quiet { QUIET_HULL } else { 2.0 }, hull_r),
         };
-        out.scene.push(light(p[0], p[1], r, c, k));
+        hulls.push((h.hull.id, p, h.row.pos, light(p[0], p[1], r, c, k)));
         if *hit {
             ring(&mut out.scene, p, 3.0 * hull_r, hull_r, linear(s.palette.status(Status::Hit)));
         }
@@ -454,6 +543,10 @@ pub fn lights(s: &Scene, ops: &[Op]) -> Lights {
         let m = seats.len();
         let apart = if m > 1 { (widest + CLUSTER_GAP * hull_r) / (std::f64::consts::PI / m as f64).sin() } else { 0.0 };
         let all: Vec<usize> = seats.values().flatten().copied().collect();
+        let at = |i: usize| match hull_ops[i] {
+            Op::Hull { s: sp, .. } => pos(*sp),
+            Op::World { .. } => unreachable!("hull_ops holds hulls"),
+        };
         let middle = mean(&all);
         for (k, ((seat, back), members)) in seats.iter().enumerate() {
             let (sin, cos) = (std::f64::consts::TAU * k as f64 / m as f64).sin_cos();
@@ -464,17 +557,52 @@ pub fn lights(s: &Scene, ops: &[Op]) -> Lights {
             let n = members.len();
             let dots = n.min(CLUSTER_MAX_DOTS);
             let k_dot = 2.0 * n as f32 / dots as f32;
-            for d in 0..dots {
+            // A dot per hull, in id order, so a hull keeps its dot while the
+            // cluster's membership holds (past the most dots, the rest
+            // brighten them).
+            let mut by_id: Vec<usize> = members.clone();
+            by_id.sort_by_key(|&i| s.view.hulls[i].hull.id);
+            for (d, &i) in by_id.iter().take(dots).enumerate() {
                 let (sin, cos) = (GOLDEN_ANGLE * d as f64).sin_cos();
                 // The first dot at the center: a lone hull is where it stands.
                 let r = spacing * (d as f64).sqrt();
-                out.scene.push(light(c[0] + r * cos, c[1] + r * sin, CLUSTER_DOT_R * hull_r, color, k_dot));
+                let dot = light(c[0] + r * cos, c[1] + r * sin, CLUSTER_DOT_R * hull_r, color, k_dot);
+                hulls.push((s.view.hulls[i].hull.id, at(i), s.view.hulls[i].row.pos, dot));
             }
             if let Some(Op::Hull { at, vector: Some((end, col)), .. }) = members.first().map(|&i| hull_ops[i]) {
                 plume(&mut out.scene, s, c, *at, *end, *col, hull_r);
             }
             if members.iter().any(|&i| matches!(hull_ops[i], Op::Hull { hit: true, .. })) {
                 ring(&mut out.scene, c, radius(n) + 2.0 * hull_r, hull_r, linear(s.palette.status(Status::Hit)));
+            }
+        }
+    }
+    let targets: Vec<(u64, [f64; 2], [f64; 3])> =
+        hulls.iter().map(|(id, p, at, l)| (*id, [l.x as f64 - p[0], l.y as f64 - p[1]], *at)).collect();
+    let longest = TRAIL_MAX_SHARE * s.camera.width.max(s.camera.height) / PIXEL;
+    let mut trail_lights = 0;
+    for ((_, p, _, l), (o, was)) in hulls.iter().zip(tween.ease(&targets, dt)) {
+        let now = [p[0] + o[0], p[1] + o[1]];
+        out.scene.push(Light { x: now[0] as f32, y: now[1] as f32, ..*l });
+        // Where this light was drawn last frame, through this frame's camera,
+        // so a pan or a zoom draws no trail.
+        let Some((o0, at0)) = was else { continue };
+        let q = pos(s.camera.project(at0));
+        let then = [q[0] + o0[0], q[1] + o0[1]];
+        let len = (now[0] - then[0]).hypot(now[1] - then[1]);
+        if len > TRAIL_MIN_PX && len <= longest && trail_lights < TRAIL_MAX_LIGHTS {
+            let n = ((len / l.r.max(0.5) as f64).ceil() as usize).clamp(1, TRAIL_MAX_SAMPLES);
+            for i in 1..=n.min(TRAIL_MAX_LIGHTS - trail_lights) {
+                let f = i as f64 / (n + 1) as f64;
+                let k = TRAIL_SHARE * 2.0 * (1.0 - f as f32) / (n + 1) as f32;
+                let c = l.color.map(|c| c * k);
+                out.scene.push(Light {
+                    x: (now[0] + (then[0] - now[0]) * f) as f32,
+                    y: (now[1] + (then[1] - now[1]) * f) as f32,
+                    r: l.r,
+                    color: c,
+                });
+                trail_lights += 1;
             }
         }
     }
@@ -623,10 +751,9 @@ pub fn rasterize(l: &Lights, w: usize, h: usize, hdr: &mut Hdr, out: &mut Raster
     hdr.resolve(out, lut);
 }
 
-/// [`lights`] then [`rasterize`], at the camera's size.
-pub fn render(s: &Scene, ops: &[Op], hdr: &mut Hdr, out: &mut Raster, lut: &ToneLut) {
-    let (w, h) = ((s.camera.width / PIXEL).ceil() as usize, (s.camera.height / PIXEL).ceil() as usize);
-    rasterize(&lights(s, ops), w, h, hdr, out, lut);
+/// The juicy frame's size for a camera, juicy pixels.
+pub fn frame_size(camera: &crate::camera::Camera) -> (usize, usize) {
+    ((camera.width / PIXEL).ceil() as usize, (camera.height / PIXEL).ceil() as usize)
 }
 
 #[cfg(test)]
@@ -638,6 +765,13 @@ mod tests {
     use crate::tactical::plan;
 
     const WHITE: [f32; 3] = [1.0, 1.0, 1.0];
+
+    /// The scene drawn by the CPU renderer, every light where its layout
+    /// puts it.
+    fn render(s: &Scene, ops: &[Op], hdr: &mut Hdr, out: &mut Raster, lut: &ToneLut) {
+        let (w, h) = frame_size(s.camera);
+        rasterize(&lights(s, ops), w, h, hdr, out, lut);
+    }
 
     #[test]
     fn the_tone_curve_keeps_black_rises_and_never_passes_white() {
@@ -918,6 +1052,101 @@ mod tests {
             }),
             "outside the hit seat's dots"
         );
+    }
+
+    /// **A cluster laid out afresh slides to its new layout** (T-184): when a
+    /// rival's hulls arrive and the seat's cluster steps aside, each hull's
+    /// light moves no more per frame than the easing allows, closes on its new
+    /// place, and is there within a second — where an uneased frame puts it.
+    #[test]
+    fn a_cluster_laid_out_afresh_slides_to_its_new_layout() {
+        let replay = Replay::from_json(TINY).unwrap();
+        let palette = Palette::default();
+        let mut camera = Camera::new(320.0, 200.0);
+        camera.fit(replay.planets.iter().map(|p| p.pos), 20.0);
+        camera.scale *= 40.0;
+        let base = replay.view_at(0.0);
+        let five = *base.hulls.iter().find(|h| h.hull.id == 5).unwrap();
+        camera.center = [five.row.pos[0], five.row.pos[1]];
+        let crowd = |zero: u64, one: u64| {
+            let mut view = base.clone();
+            view.hulls.clear();
+            for k in 0..zero + one {
+                let mut c = five;
+                (c.hull.id, c.row.id, c.hull.owner) = (100 + k, 100 + k, usize::from(k >= zero));
+                view.hulls.push(c);
+            }
+            view
+        };
+        fn at<'a>(r: &'a Replay, v: &'a crate::replay::View, c: &'a Camera, p: &'a Palette) -> Scene<'a> {
+            Scene { replay: r, view: v, camera: c, palette: p, selected: None, rate: 1.0 }
+        }
+        let scene = |view| at(&replay, view, &camera, &palette);
+        let (alone, met) = (crowd(6, 0), crowd(6, 4));
+        let mut tween = Tween::default();
+        let s = scene(&alone);
+        lights_eased(&s, &plan(&s), &mut tween, 1.0 / 60.0);
+        assert!(!tween.moving(), "a first frame shows every light at its place");
+        let before: Vec<[f64; 2]> = (100..106).map(|id| tween.offset(id).unwrap()).collect();
+        let s = scene(&met);
+        let ops = plan(&s);
+        let settled = lights(&s, &ops);
+        let mut target = Tween::default();
+        lights_eased(&s, &ops, &mut target, f64::INFINITY);
+        let gap = |a: [f64; 2], b: [f64; 2]| (a[0] - b[0]).hypot(a[1] - b[1]);
+        let widest =
+            (100..106).map(|id| gap(before[id as usize - 100], target.offset(id).unwrap())).fold(0.0, f64::max);
+        assert!(widest > 5.0, "the seat's cluster steps aside: {widest:.1} px");
+        let step = 1.0 - (-1.0 / 60.0 / TWEEN_SECONDS).exp();
+        let mut last = before.clone();
+        let mut frames = 0;
+        while tween.moving() || frames == 0 {
+            let l = lights_eased(&s, &ops, &mut tween, 1.0 / 60.0);
+            frames += 1;
+            for id in 100..106u64 {
+                let (now, goal, was) = (tween.offset(id).unwrap(), target.offset(id).unwrap(), last[id as usize - 100]);
+                let most = step * gap(was, goal) + TWEEN_SNAP_PX;
+                assert!(gap(now, was) <= most, "frame {frames}: a light moves at most the easing's share");
+                assert!(gap(now, goal) <= gap(was, goal), "frame {frames}: and closes on its place");
+                last[id as usize - 100] = now;
+            }
+            if !tween.moving() {
+                assert_eq!(l, settled, "settled, the frame is the uneased one");
+            }
+            assert!(frames <= 60, "there within a second");
+        }
+        assert!(frames > 5, "and it took some frames: {frames}");
+    }
+
+    /// **A hull that moved draws a trail back to where it was; a pan does
+    /// not** (T-184): the trail is where the light was last frame, through
+    /// this frame's camera, so only the hull's own motion leaves one.
+    #[test]
+    fn a_moving_hull_draws_a_trail_and_a_pan_does_not() {
+        let replay = Replay::from_json(TINY).unwrap();
+        let palette = Palette::default();
+        let mut camera = Camera::new(320.0, 200.0);
+        camera.fit(replay.planets.iter().map(|p| p.pos), 20.0);
+        camera.scale *= 40.0;
+        let mut view = replay.view_at(0.0);
+        view.hulls.retain(|h| h.hull.id == 5);
+        camera.center = [view.hulls[0].row.pos[0], view.hulls[0].row.pos[1]];
+        let lit = |view: &crate::replay::View, camera: &Camera, tween: &mut Tween| {
+            let s = Scene { replay: &replay, view, camera, palette: &palette, selected: None, rate: 1.0 };
+            lights_eased(&s, &plan(&s), tween, 1.0 / 60.0).scene.len()
+        };
+        let mut tween = Tween::default();
+        let still = lit(&view, &camera, &mut tween);
+        assert_eq!(lit(&view, &camera, &mut tween), still, "a hull standing still draws no trail");
+        let mut panned = camera;
+        panned.center[0] += 40.0 / camera.scale;
+        assert_eq!(lit(&view, &panned, &mut tween), still, "a pan draws no trail");
+        let mut moved = view.clone();
+        moved.hulls[0].row.pos[0] += 30.0 / camera.scale;
+        let trailed = lit(&moved, &panned, &mut tween);
+        assert!(trailed > still, "a hull that moved 30 px draws a trail: {still} → {trailed} lights");
+        moved.hulls[0].row.pos[0] += 10.0 * camera.width / camera.scale;
+        assert_eq!(lit(&moved, &panned, &mut tween), still, "a jump of ten screens is not motion");
     }
 
     #[test]

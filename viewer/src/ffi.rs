@@ -77,6 +77,25 @@ pub extern "C" fn hv_load(w: f64, h: f64) -> i32 {
     }
 }
 
+/// **Appends a piece of a live run** in the input buffer (T-183,
+/// [`crate::replay::Replay::append`]). Returns 0, or 1 with the reason in
+/// text 3.
+#[no_mangle]
+pub extern "C" fn hv_append() -> i32 {
+    let text = INPUT.with(|b| String::from_utf8_lossy(&std::mem::take(&mut *b.borrow_mut())).into_owned());
+    match with(|v| Some(v.append(&text))) {
+        Some(Ok(())) => 0,
+        Some(Err(e)) => {
+            ERROR.with(|x| *x.borrow_mut() = e);
+            1
+        }
+        None => {
+            ERROR.with(|x| *x.borrow_mut() = "no replay is loaded".into());
+            1
+        }
+    }
+}
+
 #[no_mangle]
 pub extern "C" fn hv_resize(w: f64, h: f64) {
     with(|v| v.resize(w, h))
@@ -85,6 +104,13 @@ pub extern "C" fn hv_resize(w: f64, h: f64) {
 #[no_mangle]
 pub extern "C" fn hv_tick(dt: f64) {
     with(|v| v.tick(dt))
+}
+
+/// 1 while a juicy light is still easing to its place (T-184): the shell
+/// draws the next frame though nothing else changed.
+#[no_mangle]
+pub extern "C" fn hv_animating() -> i32 {
+    with(|v| v.animating() as i32)
 }
 
 /// Draws and returns the framebuffer.

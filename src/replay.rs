@@ -157,8 +157,13 @@ pub fn record_run(galaxy: &Galaxy, sim: Simulation, cfg: &ReplayConfig) -> Strin
 }
 
 /// **A run recorded a few frames at a time** (T-180), so a caller with a user
-/// waiting — the browser's engine module — can report progress between
-/// steps. The replay it finishes is byte for byte [`record_run`]'s.
+/// waiting — the browser's engine module — can show it while it runs. The
+/// replay it finishes is byte for byte [`record_run`]'s.
+///
+/// **Live** (T-183): [`Recorder::head`] is a replay of every frame taken so
+/// far, and each [`Recorder::chunk`] after it carries what the run added
+/// since — its frames, the hulls that are new or newly wrecked, and its
+/// events — so a viewer can play a run while the engine is still running it.
 pub struct Recorder {
     sim: Simulation,
     cfg: ReplayConfig,
@@ -168,6 +173,11 @@ pub struct Recorder {
     plays: usize,
     /// Every hull seen, by id: what it is, written once after the frames.
     hulls: std::collections::BTreeMap<u64, crate::snapshot::VehicleSnapshot>,
+    /// Live: the bytes of `out` sent, the hulls whose rows changed since the
+    /// last send, and the events sent.
+    sent: usize,
+    changed: std::collections::BTreeSet<u64>,
+    events_sent: usize,
 }
 
 impl Recorder {
@@ -177,7 +187,19 @@ impl Recorder {
         header(&mut out, galaxy, &sim, &cfg);
         out.push_str(",\"frames\":[");
         let times = frame_times(sim.horizon_years(), &cfg);
-        Recorder { sim, cfg, out, times, done: 0, plays: 0, hulls: Default::default() }
+        let sent = out.len();
+        Recorder {
+            sim,
+            cfg,
+            out,
+            times,
+            done: 0,
+            plays: 0,
+            hulls: Default::default(),
+            sent,
+            changed: Default::default(),
+            events_sent: 0,
+        }
     }
 
     /// The frames the replay will hold.
@@ -208,13 +230,56 @@ impl Recorder {
             for v in &snap.vehicles {
                 // What a hull is does not change; when it was wrecked is
                 // learned in the first frame after.
-                let h = self.hulls.entry(v.id).or_insert(*v);
-                h.wrecked_at = h.wrecked_at.or(v.wrecked_at);
+                let h = self.hulls.entry(v.id).or_insert_with(|| {
+                    self.changed.insert(v.id);
+                    *v
+                });
+                if h.wrecked_at.is_none() && v.wrecked_at.is_some() {
+                    h.wrecked_at = v.wrecked_at;
+                    self.changed.insert(v.id);
+                }
             }
             frame(&mut self.out, &snap);
             self.done += 1;
         }
         self.done
+    }
+
+    /// **The replay so far** (T-183): every frame taken, every hull seen and
+    /// every event logged, with `"live": true` — more will follow in
+    /// [`Self::chunk`]s. Marks all of it sent.
+    pub fn head(&mut self) -> String {
+        let mut doc = self.out.clone();
+        doc.push_str("],\"hull_fields\":");
+        strings(&mut doc, &HULL_FIELDS);
+        doc.push_str(",\"hulls\":[");
+        hull_rows(&mut doc, self.hulls.values());
+        doc.push(']');
+        self.events_sent = events(&mut doc, &self.sim, &self.cfg, 0);
+        doc.push_str(",\"live\":true}");
+        self.sent = self.out.len();
+        self.changed.clear();
+        doc
+    }
+
+    /// **What the run added since the last send** (T-183), as one JSON
+    /// object: `frames`, the `hulls` that are new or newly wrecked (each a
+    /// whole row, which replaces the one sent before), the `events` logged
+    /// since, `events_truncated`, and `done` once every frame is taken. The
+    /// field lists are the head's.
+    pub fn chunk(&mut self) -> String {
+        let frames = self.out[self.sent..].trim_start_matches(',');
+        let mut doc = String::with_capacity(frames.len() + 64);
+        doc.push_str("{\"frames\":[");
+        doc.push_str(frames);
+        doc.push_str("],\"hulls\":[");
+        hull_rows(&mut doc, self.changed.iter().map(|id| &self.hulls[id]));
+        doc.push(']');
+        self.events_sent = events(&mut doc, &self.sim, &self.cfg, self.events_sent);
+        doc.push_str(&format!(",\"done\":{}}}", self.done == self.times.len()));
+        self.sent = self.out.len();
+        self.changed.clear();
+        doc
     }
 
     /// The replay: every frame taken so far, then the hulls and the events.
@@ -223,29 +288,34 @@ impl Recorder {
         out.push_str("],\"hull_fields\":");
         strings(&mut out, &HULL_FIELDS);
         out.push_str(",\"hulls\":[");
-        for (i, v) in hulls.values().enumerate() {
-            if i > 0 {
-                out.push(',');
-            }
-            out.push_str(&format!(
-                "[{},{},{},{},{},{},",
-                v.id,
-                v.owner,
-                index(&HULLS, v.hull),
-                index(&DESIGNS, v.design),
-                v.beams,
-                v.tubes
-            ));
-            match v.wrecked_at {
-                Some(t) => write_num(&mut out, t, WRECK_DECIMALS),
-                None => out.push_str("null"),
-            }
-            out.push(']');
-        }
+        hull_rows(&mut out, hulls.values());
         out.push(']');
-        events(&mut out, &sim, &cfg);
+        events(&mut out, &sim, &cfg, 0);
         out.push('}');
         out
+    }
+}
+
+/// Hull rows: what each hull is, and when it was wrecked.
+fn hull_rows<'a>(out: &mut String, hulls: impl Iterator<Item = &'a crate::snapshot::VehicleSnapshot>) {
+    for (i, v) in hulls.enumerate() {
+        if i > 0 {
+            out.push(',');
+        }
+        out.push_str(&format!(
+            "[{},{},{},{},{},{},",
+            v.id,
+            v.owner,
+            index(&HULLS, v.hull),
+            index(&DESIGNS, v.design),
+            v.beams,
+            v.tubes
+        ));
+        match v.wrecked_at {
+            Some(t) => write_num(out, t, WRECK_DECIMALS),
+            None => out.push_str("null"),
+        }
+        out.push(']');
     }
 }
 
@@ -424,17 +494,18 @@ fn frame(out: &mut String, snap: &Snapshot) {
     out.push_str("]}");
 }
 
-fn events(out: &mut String, sim: &Simulation, cfg: &ReplayConfig) {
-    out.push_str(",\"event_fields\":");
-    strings(out, &EVENT_FIELDS);
+/// The logged events from the `from`th on, as `event_fields` (when `from` is
+/// 0), `events` and `events_truncated`; returns the events written in all.
+fn events(out: &mut String, sim: &Simulation, cfg: &ReplayConfig, from: usize) -> usize {
+    if from == 0 {
+        out.push_str(",\"event_fields\":");
+        strings(out, &EVENT_FIELDS);
+    }
     out.push_str(",\"events\":[");
-    let mut truncated = false;
-    for (written, r) in sim.log().iter().enumerate() {
-        if written == cfg.max_events {
-            truncated = true;
-            break;
-        }
-        if written > 0 {
+    let log = sim.log();
+    let end = log.len().min(cfg.max_events);
+    for (i, r) in log.iter().enumerate().take(end).skip(from) {
+        if i > from {
             out.push(',');
         }
         out.push('[');
@@ -448,7 +519,8 @@ fn events(out: &mut String, sim: &Simulation, cfg: &ReplayConfig) {
         string(out, &r.event.to_string());
         out.push(']');
     }
-    out.push_str(&format!("],\"events_truncated\":{truncated}"));
+    out.push_str(&format!("],\"events_truncated\":{}", log.len() > cfg.max_events));
+    end.max(from)
 }
 
 /// `name`'s place in `list`, the last entry when it is not there.
@@ -741,6 +813,62 @@ mod tests {
             done = next;
         }
         assert_eq!(r.finish(), whole);
+    }
+
+    /// **A live recording is the whole one, sent in pieces** (T-183): the
+    /// head's frames, hulls and events, with each chunk's frames and events
+    /// appended and its hull rows put in place by id, are the whole replay's
+    /// — with the event cap crossed between chunks, so truncation is the
+    /// whole one's too.
+    #[test]
+    fn a_head_and_its_chunks_are_the_whole_replay() {
+        let (g, s) = small(5, LogFilter::all());
+        let logged = parse(&record_run(&g, s, &rc())).get("events").arr().len();
+        for max_events in [100_000, logged / 2] {
+            let cfg = ReplayConfig { max_events, ..rc() };
+            let (g, s) = small(5, LogFilter::all());
+            let whole = parse(&record_run(&g, s, &cfg));
+            let (g, s) = small(5, LogFilter::all());
+            let mut r = Recorder::new(&g, s, cfg.clone());
+            r.step(2);
+            let head = parse(&r.head());
+            assert_eq!(head.get("live"), &J::Bool(true));
+            let mut frames = head.get("frames").arr().clone();
+            let id = |row: &J| row.arr()[0].num() as u64;
+            let mut hulls: std::collections::BTreeMap<u64, J> =
+                head.get("hulls").arr().iter().map(|h| (id(h), h.clone())).collect();
+            let mut events = head.get("events").arr().clone();
+            let head_events = events.len();
+            let mut truncated;
+            let mut chunks = 0;
+            loop {
+                let done = r.step(3) == r.frames_total();
+                let c = parse(&r.chunk());
+                chunks += 1;
+                frames.extend(c.get("frames").arr().iter().cloned());
+                hulls.extend(c.get("hulls").arr().iter().map(|h| (id(h), h.clone())));
+                events.extend(c.get("events").arr().iter().cloned());
+                truncated = c.get("events_truncated").clone();
+                assert_eq!(c.get("done"), &J::Bool(done));
+                if done {
+                    break;
+                }
+            }
+            assert!(chunks > 3 && frames.len() > 10, "{chunks} chunks, {} frames", frames.len());
+            assert_eq!(&frames, whole.get("frames").arr());
+            assert_eq!(&hulls.into_values().collect::<Vec<_>>(), whole.get("hulls").arr());
+            assert_eq!(&events, whole.get("events").arr(), "events with a cap of {max_events}");
+            assert_eq!(&truncated, whole.get("events_truncated"));
+            if max_events < logged {
+                let ok = head_events < max_events && truncated == J::Bool(true);
+                assert!(ok, "the cap of {max_events} is crossed after the head's {head_events} of {logged}");
+            }
+            let after = format!(
+                r#"{{"frames":[],"hulls":[],"events":[],"events_truncated":{},"done":true}}"#,
+                truncated == J::Bool(true)
+            );
+            assert_eq!(r.chunk(), after, "a chunk after the end carries nothing");
+        }
     }
 
     /// **A dense opening, then the even spacing** (T-177): frames every

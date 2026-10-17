@@ -1723,6 +1723,10 @@ their recipes (`hyades_engine::demos`); a recipe's card plays enter through
 on every demo (appendix §D.63.1). Remaining: orders from a match rather than
 a recipe, and the verifier.
 
+**Advanced at T-183:** the worker runs a demo live, posting the replay so far
+and then each piece the run adds (`Recorder::head`, `Recorder::chunk`), so the
+viewer plays while the engine runs.
+
 ### T-167. The rendezvous layer and the link flow
 
 Sessions spec §3–§5: the `publish`/`subscribe` rendezvous over Nostr, the link

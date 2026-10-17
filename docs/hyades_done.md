@@ -185,6 +185,34 @@ at `Band IV` with default population held 0.009 kt of basics for 250 yr, so no
 card landed; `GalaxyConfig::homeworld_start_infrastructure`, added for it, is
 deleted as unused (`Hyades_interface.md` ruling 39, §6.2; appendix §D.63.2).
 
+### T-184. Juicy lights slide to a new layout, and a fast hull leaves a trail
+
+*Opened at the author's report: "Every frame still produces a lot of janky
+displacement in the juicy view. Large changes without tweening animation."*
+Two causes, measured on screen (appendix §D.65). A cluster's layout is redone
+every frame, so a hull joining or leaving one moved every dot at once, by up
+to 62 pixels a frame in `beams`: each dot now belongs to one hull and its
+offset eases over `TWEEN_SECONDS` = 0.12 s (`juicy::Tween`), largest change
+now 6.4 pixels; a seek snaps. And `palette` and `forge` opened framed on a
+fight at a rate that crossed up to 234 pixels a frame: the opening rate is
+now bounded by `OPENING_SCREEN_SPEED` = 240 pixels a second for a hull at
+light speed (0.070 and 0.30 yr/s; at most 1 and 3 pixels a frame), and the
+rate menu reaches ×256. A hull that moves more than 2 pixels in a frame draws
+a frame-long trail. All magnitudes proposed (`Hyades_interface.md` §4, §7.1;
+R-UI2).
+
+### T-183. A demo runs live while it is watched
+
+*Opened at the author's ruling: "I don't want to run the replays before
+viewing. I want live simulation while I'm viewing."* The engine's worker posts
+the replay so far after the first frame (`Recorder::head`, `"live": true`) and
+what the run adds about every 100 ms after it (`Recorder::chunk`); the viewer
+opens on the head and plays, appends each chunk (`Replay::append`,
+`hv_append`), and its clock waits at the last frame arrived
+(`Timeline::ready`). The status line says how far the engine has run. Full
+demos show their first frame in 0.28–0.55 s, against 1.5–6.9 s to record first
+(`Hyades_interface.md` ruling 40, §2, §3.1, §8; appendix §D.64). Resolves R-UI5.
+
 ### T-182. The viewer holds a replay in under half the memory
 
 Arrays of numbers parse into `Value::Nums` (8 bytes a number, allocated to

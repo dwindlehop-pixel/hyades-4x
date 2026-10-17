@@ -518,3 +518,85 @@ input**: `hv_load` copied the input buffer into a `String` before parsing,
 another 43 MB for `palette`; it now parses in place and releases the buffer.
 The replay holds 453,905 hull rows for `palette`, 286,195 for `forge` and
 121,794 for `expansion`.
+
+## D.64 A demo run live (T-183)
+
+Supports `Hyades_interface.md` ruling 40, §2 and §3.1.
+
+**A run read piece by piece is the run read whole.** `replay::tests::a_head_and_its_chunks_are_the_whole_replay`
+reassembles the head and its chunks (a 150-world, 2-seat, 120-yr bed, every
+log category) to the whole replay's frames, hulls and events, with the event
+cap set to half the run's events so it is crossed after the head.
+`viewer/tests/contract.rs::a_live_run_read_as_it_arrives_is_the_run_read_whole`
+appends a chunk a frame for every quick demo and compares the viewer's
+`Replay` to the whole recording's, field for field, including hex works and
+wreck times.
+
+**Time to the first frame, and to the whole run**, full demos, headless
+Chromium on SwiftShader (software GL) in this container, a scratch probe
+sampling the status line every 100 ms, two rounds each:
+
+| demo | first frame shown | whole run arrived | samples waiting at the last frame |
+|---|---|---|---|
+| `expansion` | 320, 546 ms | 1.62, 1.95 s | 1 of 12, 1 of 13 |
+| `palette` | 424, 408 ms | 5.85, 5.96 s | 1 of 43, 1 of 45 |
+| `forge` | 380, 284 ms | 5.64, 5.95 s | 1 of 45, 1 of 46 |
+
+Before T-183 the viewer opened once the whole recording was in: 1.5–2.6 s
+(`expansion`), 5.9–6.9 s (`palette`) and 6.0–6.7 s (`forge`) (§D.63.1). The
+one waiting sample in each run is the first, before the first chunk arrives;
+at the opening rate (a run in 60 s) the engine is ahead of the clock from then
+on. These are bounds for this container only; a phone's engine runs slower,
+and how often the clock waits there is the missing measurement.
+
+## D.65 Juicy displacement between drawn frames (T-184)
+
+Supports `Hyades_interface.md` §4 (the opening rate) and §7.1 (eased
+clusters, trails). The author's report: *"Every frame still produces a lot of
+janky displacement in the juicy view. Large changes without tweening
+animation."*
+
+**Method.** A scratch probe (`viewer/examples/jank_probe.rs`, not landed)
+plays each full demo from its start for 10 s of wall time at 60 drawn frames
+a second, at the viewer's opening zoom (960 × 600), and follows every hull on
+screen by id: its own screen motion per frame, its light's motion beyond it,
+and the change in its light's per-frame motion from one frame to the next — a
+light moving at a steady speed reads as smooth, and a change in that speed
+reads as a jolt. The first version counted hulls off screen as well, and put
+`palette`'s median hull motion at 569 pixels a frame; that was the traffic
+outside the view, and every figure below counts hulls on screen only.
+
+| demo, opening | on-screen hull motion a frame | change in a light's motion a frame (p99.9, max) |
+|---|---|---|
+| `palette`, 10 yr/s, uneased | p99 40.1, max 234 px | 64.2, 179.0 px |
+| `palette`, 10 yr/s, eased | p99 40.1, max 234 px | 56.3, 94.3 px |
+| `palette`, 0.070 yr/s, eased | p99 1.0, max 1 px | 8.1, 14.0 px |
+| `forge`, 13.3 yr/s, uneased | p99 31.5, max 161 px | 54.3, 77.3 px |
+| `forge`, 13.3 yr/s, eased | p99 31.5, max 161 px | 12.1, 20.3 px |
+| `forge`, 0.30 yr/s, eased | p99 2.0, max 3 px | 0.01, 0.0 px |
+| `beams`, 0.05 yr/s, uneased | p99 1.1, max 1 px | 39.3, 61.7 px |
+| `beams`, 0.05 yr/s, eased | p99 1.1, max 1 px | 4.6, 6.4 px |
+| `sentries`, 0.05 yr/s, uneased | p99 1.2, max 1 px | 11.1, 15.2 px |
+| `sentries`, 0.05 yr/s, eased | p99 1.2, max 1 px | 1.25, 2.1 px |
+
+Two mechanisms, each measured on its own:
+
+- **A cluster's layout is redone every frame.** In `beams` and `sentries`
+  the hulls move about a pixel a frame and their lights jumped up to 62 and
+  15 pixels: a dot's place in its cluster changed whole when a hull joined or
+  left it, or when a rival's cluster arrived in the same place. Eased, the
+  largest change is 6.4 and 2.1 pixels, spread over the frames the easing
+  takes.
+- **The opening rate outran the opening zoom.** `palette` and `forge` open
+  framed on a fight, at 3,450 and 789 pixels a light year, at a rate that
+  played the run in a minute; a hull at light speed then crossed 575 and 175
+  pixels a frame. Easing does not touch that, since it is the hulls' own
+  motion. Bounding the opening rate by `OPENING_SCREEN_SPEED` takes on-screen
+  motion to at most 1 and 3 pixels a frame. `expansion` opens at the galaxy
+  level and is unchanged (0.2 pixels a frame).
+
+These are estimates from one 10-s window per demo at one zoom; another
+window or zoom is the missing measurement for how often the easing still
+moves a light by more than a few pixels a frame (`palette`'s ring fight, at
+14 pixels, is the largest seen).
+

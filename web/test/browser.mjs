@@ -1,13 +1,14 @@
 // Browser test of the deployed client (docs/Hyades_interface.md §8): serves
 // the site as Pages will, opens it in headless Chromium, and checks that
-//   - the menu leads to the replay list and a replay opens in the viewer, on
-//     WebGL2, with no console error, and draws;
+//   - the menu leads to the replay list and a demo opens in the viewer, on
+//     WebGL2, with no console error, playing while the engine runs it (T-183),
+//     and draws;
 //   - a click on a drawn hull selects it;
 //   - the GPU juicy frame matches the module's CPU juicy frame (the
 //     reference) within a stated tolerance;
 //   - play, the log text filter and a log row's seek work;
 //   - the palette editor, the palette screen and the old palette.html link;
-//   - the engine's module answered 503 once is fetched again, and the demo records;
+//   - the engine's module answered 503 once is fetched again, and the demo runs;
 //   - a lost WebGL context falls back to the CPU renderer, which draws and picks;
 //   - on a phone (Pixel 7 emulation) the theater fills most of the screen with
 //     no sideways scroll, and a tap on a drawn hull selects it.
@@ -59,6 +60,16 @@ const errors = [];
 page.on("console", (m) => { if (m.type() === "error") errors.push(m.text()); });
 page.on("pageerror", (e) => errors.push(String(e)));
 // Name the resource behind a "Failed to load resource" console error.
+/// Waits for the live run to arrive whole (the status stops saying how far it
+/// has simulated), then pauses at the start, where the checks below look.
+async function settle(p) {
+  await p.waitForFunction(() => !window.hyades.text(0).includes("simulated to"), null, { timeout: 30000 });
+  await p.evaluate(() => {
+    const hv = window.hyades.hv();
+    hv.hv_play(0);
+    hv.hv_seek_fraction(0);
+  });
+}
 const failed = (r) => { if (r.status() >= 400) errors.push(`${r.status()} ${r.url()}`); };
 page.on("response", failed);
 
@@ -88,6 +99,8 @@ try {
   await page.click("#menu-replays");
   await page.click('button[data-replay="sentries"]');
   await page.waitForFunction(() => window.hyades.loaded() === "sentries" && document.getElementById("message").hidden, null, { timeout: 30000 });
+  check(await page.evaluate(() => window.hyades.hv().hv_playing() === 1), "a demo plays as it opens, while the engine runs it");
+  await settle(page);
   check(new URL(page.url()).search === "?replay=sentries", `the viewer's link names the replay: ${new URL(page.url()).search}`);
   const renderer = await page.evaluate(() => document.body.dataset.renderer);
   check(renderer === "webgl2", `the page renders with ${renderer}`);
@@ -217,6 +230,7 @@ try {
   tuned.on("pageerror", (e) => errors.push(String(e)));
   await tuned.goto(`${base}/?replay=sentries#palette=${encodeURIComponent("ink=0.1 Hit=#00ff00")}`);
   await tuned.waitForFunction(() => window.hyades?.hv() && document.getElementById("label").textContent !== "", null, { timeout: 30000 });
+  await settle(tuned);
   const line = await tuned.evaluate(() => window.hyades.text(9));
   check(line.startsWith("ink=0.1 ") && line.endsWith("Hit=#00ff00"), `a palette in the link opens with the page: ${line}`);
   const groundAt = () => tuned.evaluate(() => {
@@ -261,7 +275,8 @@ try {
   });
   await flaky.goto(`${base}/?replay=sentries`);
   await flaky.waitForFunction(() => window.hyades?.loaded() === "sentries" && document.getElementById("message").hidden, null, { timeout: 30000 });
-  check(refused === 2, `the engine's module answered 503 is fetched again and the demo records (${refused} requests)`);
+  await settle(flaky);
+  check(refused === 2, `the engine's module answered 503 is fetched again and the demo runs (${refused} requests)`);
 
   // A lost WebGL context moves drawing to the module's CPU renderer, on a
   // fresh canvas that still draws and still takes a click.
@@ -287,6 +302,7 @@ try {
   mobile.on("pageerror", (e) => errors.push(String(e)));
   await mobile.goto(`${base}/?replay=expansion`);
   await mobile.waitForFunction(() => window.hyades?.loaded() === "expansion" && document.getElementById("message").hidden, null, { timeout: 30000 });
+  await settle(mobile);
   const geo = await mobile.evaluate(() => ({
     scroll: document.documentElement.scrollWidth, width: innerWidth, height: innerHeight,
     canvas: document.getElementById("view").clientHeight,

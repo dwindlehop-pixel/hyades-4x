@@ -135,6 +135,8 @@ an identifier to its file.
 - **§D.59** — Hexes, the clipped galaxy, a pan that moved glyphs, and counts over counts (T-159 – T-163, T-171)
 - **§D.62** (with subsections §D.62.1–§D.62.4) — Frame pacing, paths in place of routes, the `Band IV` jitter, and the palette in play (T-173 – T-178)
 - **§D.63** (with subsections §D.63.1–§D.63.3) — The demo games as recipes, their coverage, and the viewer's memory (T-180 – T-182)
+- **§D.64** — A demo run live (T-183)
+- **§D.65** — Juicy displacement between drawn frames (T-184)
 
 ### [`D-mechanisms/sessions.md`](D-mechanisms/sessions.md)
 
