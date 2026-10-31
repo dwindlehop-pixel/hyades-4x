@@ -70,7 +70,7 @@ issue covering a staged plan whose stages are tracked inside it.
 | T-147 | [#32](https://github.com/dwindlehop-pixel/hyades-4x/issues/32) | Bring the card-free spread between empires to about 20 colonies |
 | T-146 | [#33](https://github.com/dwindlehop-pixel/hyades-4x/issues/33) | Make the hex presentation-only; give color its own spacing |
 | T-145 | [#34](https://github.com/dwindlehop-pixel/hyades-4x/issues/34) | Raise the yomi of super and apex forging |
-| T-144 | [#35](https://github.com/dwindlehop-pixel/hyades-4x/issues/35) | Decisions without a cadence: a short-circuit tree, conditioned on events |
+| T-144 | [#35](https://github.com/dwindlehop-pixel/hyades-4x/issues/35) | ~~Decisions without a cadence: a short-circuit tree, conditioned on events~~ — closed; three timed re-asks remain in [#360](https://github.com/dwindlehop-pixel/hyades-4x/issues/360) |
 | T-143 | [#36](https://github.com/dwindlehop-pixel/hyades-4x/issues/36) | Every empire forges every super — make forging a forge's purpose, then trade supers |
 | T-141 | [#37](https://github.com/dwindlehop-pixel/hyades-4x/issues/37) | Decide whether spent-round debris should be cut |
 | T-140 | [#38](https://github.com/dwindlehop-pixel/hyades-4x/issues/38) | Sweep the sentry ratio and its thresholds |
