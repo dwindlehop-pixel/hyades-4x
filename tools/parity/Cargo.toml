@@ -1,0 +1,18 @@
+[package]
+name = "hyades-parity"
+version = "0.1.0"
+edition = "2021"
+description = "Native-against-wasm32 parity check for the Hyades engine (T-128): one digest function, compiled for both targets and compared by tools/parity/compare.mjs."
+license = "Apache-2.0"
+publish = false
+
+[dependencies]
+hyades-engine = { path = "../.." }
+
+[lib]
+# cdylib is the wasm32 module node loads; rlib is what the native binary links.
+crate-type = ["cdylib", "rlib"]
+
+[[bin]]
+name = "parity_native"
+path = "src/main.rs"

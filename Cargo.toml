@@ -21,8 +21,10 @@ license = "Apache-2.0"
 # The engine's browser module (sim/, T-180) links the engine and nothing else,
 # and records the demo games in a web worker; the viewer still reads only the
 # replay it hands over.
+# The parity check (tools/parity, T-128) links the engine and compiles one
+# digest function for both native and wasm32, so CI can compare them.
 [workspace]
-members = ["viewer", "net", "sim"]
+members = ["viewer", "net", "sim", "tools/parity"]
 
 [lib]
 # crate-type rlib keeps it linkable by the native MC harness AND by a wasm
