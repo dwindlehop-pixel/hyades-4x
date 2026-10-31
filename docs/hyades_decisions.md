@@ -367,7 +367,7 @@ register.
 | R-O59 | production register | engine work only: T-03 ([#62](https://github.com/dwindlehop-pixel/hyades-4x/issues/62)) |
 | R-O60 | technology register | engine work only: T-04 ([#63](https://github.com/dwindlehop-pixel/hyades-4x/issues/63)) |
 | R-O40 | warfare register | engine work only: T-09 ([#70](https://github.com/dwindlehop-pixel/hyades-4x/issues/70)) |
-| R-O31 | warfare register | engine work only: T-05 ([#64](https://github.com/dwindlehop-pixel/hyades-4x/issues/64)) |
+| ~~R-O31~~ | warfare register | resolved: built at T-05 ([#64](https://github.com/dwindlehop-pixel/hyades-4x/issues/64)) |
 | R-MC9c | warfare register | engine work only: T-12 ([#73](https://github.com/dwindlehop-pixel/hyades-4x/issues/73)) |
 
 Rows a register already strikes through or marks resolved, ratified or closed
