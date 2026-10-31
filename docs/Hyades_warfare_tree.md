@@ -339,9 +339,11 @@ trajectory rather than the stat block.** Today the engine reads the stat block,
 which means a ship cannot actually choose to under-burn — so 5.1's whole
 asymmetry is available to the *estimator* and not yet to the *pilot*.
 
-**5.7 `OPEN` — R-O31 / T-05: `min_time_search` as a reachability-cone query.**
-Same function, reverse direction. It is what makes tier-1 movement intelligence
-(`Hyades_politics_trade_and_intelligence.md` §5.1) worth buying.
+**5.7 `RATIFIED`, built (T-05) — R-O31: the reachability cone.** Same
+equation as intercept, reverse direction: `combat::reachability_cone`
+(standing layer §6.3). It is what makes tier-1 movement intelligence
+(`Hyades_politics_trade_and_intelligence.md` §5.1) worth buying, and nothing
+reads it until that lands.
 
 ---
 
@@ -2986,7 +2988,7 @@ cut is T-141.
 | [R-L0](https://github.com/dwindlehop-pixel/hyades-4x/issues/215) | per-hull slot tables | the arena |
 | ~~R-L2~~ | ~~single closing pass or repeated passes?~~ **Repeated (T-133)**: a hull that leaves reach is found again on its trajectory | — |
 | R-O40 / T-09 | throttle fraction; observe `a` from the trajectory | engine work |
-| R-O31 / T-05 | `min_time_search` as a reachability cone | engine work |
+| ~~R-O31 / T-05~~ | ~~`min_time_search` as a reachability cone~~ **built (T-05)**: `combat::reachability_cone`, no consumer yet | — |
 | [R-O65](https://github.com/dwindlehop-pixel/hyades-4x/issues/290) | flatten `hull_thrust_to_mass`? | explicit ratification |
 | [R-IND8](https://github.com/dwindlehop-pixel/hyades-4x/issues/195) | captured infrastructure | a design pass, with Production |
 | [R-WAR1](https://github.com/dwindlehop-pixel/hyades-4x/issues/349) | **elimination** — nothing eliminates anyone | a design pass |

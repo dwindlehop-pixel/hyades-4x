@@ -2439,8 +2439,8 @@ i.e. supremacy is slot-organic by construction.
 ### The standing-layer ratification — engine roadmap
 
 `docs/Hyades_standing_layer_and_observation.md` §11 lists 15 engine work items.
-Status, so this is not re-derived each time. **Six have landed** (1, 2, 5, 8, 9,
-11+12); the eight still open are GitHub issues under their
+Status, so this is not re-derived each time. **Seven have landed** (1, 2, 5, 6,
+8, 9, 11+12); the seven still open are GitHub issues under their
 T-codes (index in `docs/hyades_todo.md`), and item 10 is blocked rather than open:
 
 | # | Item | R-code | Status |
@@ -2451,7 +2451,7 @@ T-codes (index in `docs/hyades_todo.md`), and item 10 is blocked rather than ope
 | 2 | Design/roster component | **R-O28** | **done** — `Roster` (a sorted, idempotent set of `(HullType, Class)`) is a per-player component written only by tree cards. Unblocks σ_vector for Design: the distance between pre- and post-card rosters is now computable. `Class` also introduces the Banks-convention design names (R-O42b, ratified: one class per hull, Spur/Tor/Cairn/Meadow/Delta/Ford/Range/Strait/Scarp) |
 | 3 | Diplomatic fields on `Doctrine` | R-O27/R-A3 | open — no field list specified yet (**T-11**) |
 | 4 | Throttle fraction; observe `a` from trajectory not the stat block | R-O40 | open (**T-09**) |
-| 6 | `min_time_search` as a reachability-cone query | R-O31 | open — same function, reverse direction (**T-05**) |
+| 6 | `min_time_search` as a reachability-cone query | R-O31 | **done (T-05)** — `combat::reachability_cone`: a `BspTree::within` sphere query, then `combat::earliest_reach_time ≤ t`. That is the intercept equation's **first** root; `solve_intercept` can return a later one on a fly-by (#357). No consumer yet |
 | 7 | Route intercept and accept/decline through *believed* `a_max` | R-O41 | **half done** — `src/belief.rs` holds the one-sided estimator (belief is the *max* ever observed, because a ship never flies above peak) and the kinematic accept/decline. Belief is monotone, so masking is spend-once; a 4,851-case sweep pins that it errs only by optimism, which *is* the surprise attack. **Sim wiring blocked on T-30** — there is no accept/decline site in the engine yet (**T-10**) |
 | 8 | Permissive role eligibility with varying competence | R-O44 | **done** — roles §4 now states the permissive rule once and every per-role list reads "Competent:", separating *competence* (a degree — an LSV scouts badly) from *capability* (a fact — a Limited hull has no cargo hold, so a Limited Colonizer founds nothing). Engine matches: `assign_role` declines on no viable target, never on hull type |
 | 9 | `FAIR_COUNTS` rejects 18 while galaxy §2 lists it fair | R-O12 | **done** — now `[2, 3, 6, 12, 18]`. A radius-`r` hex ring holds `6r` cells, so the family is 6/12/18/24…; 9 and 15 are multiples of 3 but form no ring, so `% 3` would be the wrong predicate. The three ring radii were exactly `N/6 + 1.5`, so the existing `18 => 4.5` branch was the family's third term and the list was one term short — replaced by that closed form. **Balance targets the 2-neighbor configs (3/6/12/18); N=2 is supported but not a balance target**, which also settles R-O9's missing Green as accepted rather than open |
