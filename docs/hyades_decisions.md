@@ -294,7 +294,7 @@ the issue.
 | R-TECH2 | [#307](https://github.com/dwindlehop-pixel/hyades-4x/issues/307) | Does capability saturate on the bed? |
 | R-TECH5 | [#308](https://github.com/dwindlehop-pixel/hyades-4x/issues/308) | Fit Bradley–Terry by maximum likelihood on the Elo scale (recommended) |
 | R-TECH9 | [#309](https://github.com/dwindlehop-pixel/hyades-4x/issues/309) | Weight hulls by dry mass, not count or volume (recommended) |
-| R-TECH11 | [#310](https://github.com/dwindlehop-pixel/hyades-4x/issues/310) | Equal-spend budget B = ten General hulls (recommended) |
+| R-TECH11 | [#310](https://github.com/dwindlehop-pixel/hyades-4x/issues/310) | Equal-spend budget B = ten General hulls (recommended); equal spend itself ratified |
 | R-TECH12 | [#311](https://github.com/dwindlehop-pixel/hyades-4x/issues/311) | D_long, and a closing long-range bed |
 | R-TECH18 | [#313](https://github.com/dwindlehop-pixel/hyades-4x/issues/313) | An unlock reaches no build |
 | R-TECH19 | [#314](https://github.com/dwindlehop-pixel/hyades-4x/issues/314) | The offensive beds' judge: dry mass holding the field |
