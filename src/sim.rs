@@ -3950,6 +3950,22 @@ struct Sighting {
 /// composition is meaningless without knowing which hull it is (the mass it
 /// scales to comes from the type), and a type without a composition is the
 /// guess this replaces. Every dispatcher takes it whole.
+/// What [`Simulation::apply_hull_order`] decided before the bill, carried to
+/// [`Simulation::dispatch_hulls`] (T-06): the job, the crew and its hauler,
+/// and the hulls taken from Reserve.
+struct HullPlan {
+    role: Role,
+    target: Option<PlanetId>,
+    crew: usize,
+    reused_miners: Vec<Entity>,
+    reused_freighter: Option<Entity>,
+    paired_freighter: bool,
+    hauler: HullType,
+    blockade_port: Option<Entity>,
+    launch_delay: f64,
+    bank_before: Minerals,
+}
+
 #[derive(Clone, Copy, Debug)]
 struct BuiltHull {
     hull: HullType,
@@ -6600,6 +6616,48 @@ impl Simulation {
         self.credit(pe, self.config.dollar_per_fabrication * self.fabrication_rate(center) * self.config.cycle_years);
 
         // 1) Local mining: the center works its own density into its stockpile.
+        self.mine_own_deposit(center, center_pid);
+
+        // 2) Grow: population logistic toward `K`, paid for out of the planet's
+        // standing biological mass.
+        self.grow_population(center, center_pid, &doctrine);
+
+        // 3) Decide, but only if the yard is free.
+        //
+        // **This is the decoupling (R-O69).** The economy above is a rate over
+        // an interval and legitimately wants a cadence; the *decision* is not,
+        // and pinning it to the same 50-year tick capped every center at one
+        // build per cycle however rich it was. Measured before the change
+        // (`examples/cadence_throttle`, seeds 1 and 7): the median funded build
+        // fired at **5.5x the cost of what it bought**, 82% of funded builds
+        // could have been made at least twice that cycle and 55% at least five
+        // times, with a worst case of 112x. That is a serial dependency setting
+        // the expansion-loop time constant, not an economy running dry.
+        //
+        // A center with a build under way is skipped: its decision comes from
+        // [`EventKind::BuildDecision`] when the yard clears. A center with an
+        // empty yard has no such event pending, so the mining step doubles as
+        // its retry — mining is what changes a saving center's situation.
+        //
+        // **No decision has a cadence of its own** (the author's ruling). A
+        // center with a free berth is asked when a berth clears, when minerals
+        // land (`wake_on_minerals`), and on an economy tick only once something
+        // its last declined decision waited on has moved ([`Declined`]). T-88's
+        // retry floor, which asked a saving center at most every 50 years, is
+        // deleted; a forge forges after its yard has decided (galaxy §4.5,
+        // R-MX17).
+        if self.free_berths(center) > 0 && !self.still_declined(center) {
+            self.sys_build_decision(center);
+        } else {
+            self.forge(p, center);
+        }
+
+        self.schedule(self.config.cycle_years, EventKind::ProductionTick { center });
+    }
+
+    /// Step 1 of [`Self::sys_production_tick`]: the center works its own
+    /// deposit into its holding (T-06 split it out; no behavior change).
+    fn mine_own_deposit(&mut self, center: Entity, center_pid: PlanetId) {
         let amt = {
             let d = self.world.density.get(center).unwrap();
             let stock = d.total_mass();
@@ -6627,10 +6685,12 @@ impl Simulation {
                 },
             );
         }
+    }
 
-        // 2) Grow: population logistic toward `K`, paid for out of the planet's
-        // standing biological mass.
-        //
+    /// Step 2 of [`Self::sys_production_tick`]: one closed-form logistic step
+    /// of the population, paid out of biomass, then biosphere regrowth (T-06
+    /// split it out; no behavior change).
+    fn grow_population(&mut self, center: Entity, center_pid: PlanetId, doctrine: &Doctrine) {
         // **Two constraints, two units, and they are not the same constraint.**
         // The logistic ceiling `K = min(hab, bio_max, infra)` is a Band — a
         // magnitude tier — and says how large this world's civilization can
@@ -6763,38 +6823,6 @@ impl Simulation {
                 k: k.bands(),
             },
         );
-
-        // 3) Decide, but only if the yard is free.
-        //
-        // **This is the decoupling (R-O69).** The economy above is a rate over
-        // an interval and legitimately wants a cadence; the *decision* is not,
-        // and pinning it to the same 50-year tick capped every center at one
-        // build per cycle however rich it was. Measured before the change
-        // (`examples/cadence_throttle`, seeds 1 and 7): the median funded build
-        // fired at **5.5x the cost of what it bought**, 82% of funded builds
-        // could have been made at least twice that cycle and 55% at least five
-        // times, with a worst case of 112x. That is a serial dependency setting
-        // the expansion-loop time constant, not an economy running dry.
-        //
-        // A center with a build under way is skipped: its decision comes from
-        // [`EventKind::BuildDecision`] when the yard clears. A center with an
-        // empty yard has no such event pending, so the mining step doubles as
-        // its retry — mining is what changes a saving center's situation.
-        //
-        // **No decision has a cadence of its own** (the author's ruling). A
-        // center with a free berth is asked when a berth clears, when minerals
-        // land (`wake_on_minerals`), and on an economy tick only once something
-        // its last declined decision waited on has moved ([`Declined`]). T-88's
-        // retry floor, which asked a saving center at most every 50 years, is
-        // deleted; a forge forges after its yard has decided (galaxy §4.5,
-        // R-MX17).
-        if self.free_berths(center) > 0 && !self.still_declined(center) {
-            self.sys_build_decision(center);
-        } else {
-            self.forge(p, center);
-        }
-
-        self.schedule(self.config.cycle_years, EventKind::ProductionTick { center });
     }
 
     /// A center chooses its next build, and occupies its yard if it commits.
@@ -7466,351 +7494,453 @@ impl Simulation {
         order: BuildOrder,
         candidates: &[Candidate],
     ) -> Option<Price> {
-        let center_pid = *self.world.planet_id.get(center).unwrap();
         match order {
             BuildOrder::Idle => None,
-            BuildOrder::UpgradeInfrastructure => {
-                let target = infra_step_price(self.world.factors.get(center).unwrap().infra, &self.config);
-                // **Pay the color bill, not the total** (T-73). Same
-                // `works_bill` the decision was made against.
-                let works = self.world.works.get(self.player_entity[p]).copied().unwrap_or_default();
-                // What a standing order leaves (§10.4); the whole holding when
-                // there is none.
-                let bank_now = self.available_at(center);
-                let bill = works_bill(target, &works);
-                let payable = can_pay_bill(&bank_now, &bill);
-                // What was actually committed is the bill, not the ladder step:
-                // `eta_works` divides the total, so an efficiency card makes the
-                // whole Band genuinely cheaper — and the yard is held for what was
-                // built (T-68), which has to be the same number.
-                let billed: Price = bill.iter().fold(Price::ZERO, |a, &b| a + b);
-                // A whole Band that bills nothing buys nothing — the top of the
-                // ladder — and must not hold a berth (appendix §D.40).
-                if payable && billed > Price::ZERO {
-                    pay_bill(self.held_at_mut(center).unwrap(), &bill);
-                    let f = self.world.factors.get_mut(center).unwrap();
-                    // **A step is bought, not incremented.** The stock moves to
-                    // exactly what standing at the next step costs, so the ladder
-                    // stays the single source of the number (T-70, T-147).
-                    let next = (infra_step_of(f.infra, &self.config) + 1).min(infra_steps_to_top());
-                    f.infra = infra_price_at_step(next, &self.config);
-                    let stockpile_after = self.held_at(center).unwrap().basic_total();
-                    self.log.push(
-                        self.clock,
-                        LogEvent::BuildApplied {
-                            player: p as u32,
-                            center: center_pid,
-                            order,
-                            cost: billed.kilotons(),
-                            refined_paid: 0.0,
-                            stockpile_after: stockpile_after.kilotons(),
-                        },
-                    );
-                    Some(billed)
-                } else {
-                    None
-                }
-            }
+            BuildOrder::UpgradeInfrastructure => self.apply_infra_upgrade(p, center),
             BuildOrder::Hull { hull_type, class } => {
-                if !self.roster_permits(p, hull_type) {
-                    return None;
-                }
-                let doctrine = *self.world.doctrine.get(self.player_entity[p]).unwrap();
-                // The job is chosen here, after the object exists — not in the
-                // order, which is all a rival could read off the shipyard.
-                let tasking = self.autopilots[p].assign_role(&doctrine, hull_type, class, candidates);
-                let Some(Tasking { role, target }) = tasking else {
-                    return None; // nothing worth building this hull for right now
-                };
-
-                // **A Scout with no frontier is a hull that never exists, and
-                // the minerals for it vanish** — design law #11, on the path
-                // that was 96% of all production.
-                //
-                // `try_spend_total` runs below, *before* the role is dispatched,
-                // and `launch_survey` spawns nothing when `choose_survey_target`
-                // returns `None`. So the bank was debited, the yard held for
-                // `build_time`, and no object came out: mass destroyed, not
-                // converted. `assign_role` cannot catch this — the seam hands it
-                // candidates, never the survey frontier (design law #15) — so it
-                // belongs here, beside the roster gate, under the same contract
-                // this arm already states: *a hull with no job worth doing is
-                // declined.*
-                //
-                // The policy also declines it now (`ProductionContext::survey_frontier`),
-                // which is where the 484,136 → 18,066 hull builds came from. This
-                // is the guard that keeps the invariant true for any *other*
-                // caller — a card, or a future autopilot.
-                if role == Role::Scout && self.survey_frontier(p) == 0 {
-                    return None;
-                }
-
-                // **A blockading picket goes to a rival port** (T-123), chosen
-                // here, before the bill, so a hull with nowhere to go is never
-                // paid for (T-125: `assign_role` hands a blockader no world).
-                let blockade_port =
-                    if role == Role::Picket && self.blockade_doctrine(p) { self.blockade_target(p) } else { None };
-                if role == Role::Picket && target.is_none() && blockade_port.is_none() {
-                    return None;
-                }
-                let target = blockade_port.map(|e| *self.world.planet_id.get(e).unwrap()).or(target);
-                // **A hauler goes to the rock whose backlog is worth most**
-                // (T-147), chosen before the bill, so a hauler with no backlog
-                // to serve is never paid for.
-                let target = if role == Role::Freighter {
-                    let rock = self.shipping[p].best.map(|i| Entity(self.shipping[p].backlog[i].0))?;
-                    // One in Reserve goes first: it is already paid for.
-                    let at = *self.world.position.get(rock).unwrap();
-                    if let Some(e) = self.take_nearest_reserve(p, false, at) {
-                        let hold = self.world.hull_type.get(e).copied().unwrap_or(HullType::MediumSystems);
-                        self.retask_freighter(e, p, center, rock);
-                        self.ship_backlog(p, rock, hold.cargo_capacity(&self.config).kilotons());
-                        return Some(Price::ZERO);
-                    }
-                    self.world.planet_id.get(rock).copied()
-                } else {
-                    target
-                };
-
-                // A Miner is produced together with the Freighter that hauls for
-                // it (roles §5: the nearest center produces both), so the pair is
-                // one economic act even though it is two objects.
-                let paired_freighter = role == Role::Miner;
-                // **The roster gate asks about the hull that will be built**
-                // (T-98), which is now a function of the pair — so it is decided
-                // below, once the target is known, and checked there.
-                if paired_freighter && target.is_none() {
-                    return None;
-                }
-
-                // Recycling is checked *before* pricing, because a hull taken
-                // from Reserve is not bought: the pair's cost is only the halves
-                // that still have to be built. A center that could not afford a
-                // new pair can therefore still open an outpost with idle hulls,
-                // which is the whole point — 39% of outpost-years were being
-                // spent on exhausted rocks.
-                // **The crew is the target's, not the doctrine's** (T-72). Read
-                // from the candidate list so it is bit-identical to what
-                // `mining_pair_cost` quoted; falling back to the deposit only if
-                // the target is not among the candidates.
-                let crew = if role == Role::Miner {
-                    match target.map(|t| self.planet_entity[t.0 as usize]) {
-                        Some(te) => candidates
-                            .iter()
-                            .find(|c| self.planet_entity[c.view.id.0 as usize] == te)
-                            .map_or_else(|| self.mining_crew_for(center, te), |c| c.mining_crew),
-                        None => 1,
-                    }
-                } else {
-                    1
-                };
-                let target_entity = target.map(|t| self.planet_entity[t.0 as usize]);
-                let (reused_miners, reused_freighter) = match (self.config.recycle_mining_pairs, role, target_entity) {
-                    (true, Role::Miner, Some(te)) => {
-                        let at = *self.world.position.get(te).unwrap();
-                        // One reserved hull per crew slot, nearest first.
-                        let mut taken = Vec::new();
-                        while taken.len() < crew {
-                            match self.take_nearest_reserve(p, true, at) {
-                                Some(e) => taken.push(e),
-                                None => break,
-                            }
-                        }
-                        (taken, self.take_nearest_reserve(p, false, at))
-                    }
-                    _ => (Vec::new(), None),
-                };
-                // **Price the hull that was ordered, not the hull the role
-                // implies.** R-O29 moved the hull choice into `BuildOrder`, but
-                // this line kept reading it back off the role — which agreed
-                // only because `role_hull_type` happened to invert
-                // `assign_role`. It stops agreeing the moment Doctrine can pick
-                // a heavier colonizer, and the failure would have been silent:
-                // a General hull bought at a Medium hull's price.
-                let mut cost = hull_cost(hull_type, &self.config) * (crew - reused_miners.len().min(crew)) as f64;
-                // **Derived from the pair, not from the role** (T-98). Decided
-                // once, here, and carried to both the price and the spawn — the
-                // two must read the same hull or a General hull gets bought at a
-                // Medium hull's price, which is the drift the comment above is
-                // about.
-                let hauler = match target_entity {
-                    Some(te) if paired_freighter => self.freighter_hull(p, center, te, crew),
-                    _ => role_hull_type(Role::Freighter),
-                };
-                if paired_freighter && !self.roster_permits(p, hauler) {
-                    return None;
-                }
-                if paired_freighter && reused_freighter.is_none() {
-                    cost += hull_cost(hauler, &self.config);
-                }
-
-                // **A picket does not claim the world it holds** (T-113).
-                //
-                // `targeted` means *a colonizer of ours is already flying
-                // there*, and it is never cleared — so marking it for a picket
-                // permanently deletes that world from this empire's own
-                // candidate list. `assign_role` sends pickets to the
-                // *highest-ranked* world, so at `picket_reserve = 128` the card
-                // was burning its own 128 best targets. A picket denies rivals
-                // (`picket_blocks` tests `holder != seat`); it must not deny
-                // its owner.
-                if let Some(t) = target {
-                    if role != Role::Picket && role != Role::Freighter {
-                        self.mark_targeted(p, t);
-                    }
-                }
-                // **The whole order occupies one yard, so it launches as one
-                // unit** (T-68). The delay every hull in this order waits out is
-                // the order's own `t_build`, which is also exactly how long the
-                // caller holds the yard — one number, computed once, rather than
-                // a per-ship time that could drift from the occupancy. Hulls
-                // taken from Reserve are already built and leave at once.
-                let launch_delay = self.build_time(center, cost);
-                // Snapshot before the debit, so a dispatch that produces no
-                // object can put the bank back *exactly* (T-118).
-                // `try_spend_total` removes proportionally across the three
-                // colors, so a flat refund would change the mix — and the mix
-                // is the mineral economy's binding constraint (§6.19c).
-                // Nothing else touches this bank between here and the dispatch.
-                let bank_before = *self.held_at(center).unwrap();
-                // **What the order is paid in** — each Design's bill, for the
-                // hulls actually bought (R-TECH, the author's ruling: a card's
-                // cost in supers is what its Design writes do to production).
-                let refined = {
-                    let roster = self.world.roster.get(self.player_entity[p]);
-                    let bought = (crew - reused_miners.len().min(crew)) as f64;
-                    let owed_with = |bill_of: &dyn Fn(HullType, Class) -> DesignBill| {
-                        let (mut owed, _) =
-                            bill_of(hull_type, class).split(hull_cost(hull_type, &self.config) * bought);
-                        if paired_freighter && reused_freighter.is_none() {
-                            let (_, fclass) = Standing::of(&doctrine).design_for(Role::Freighter);
-                            let (more, _) = bill_of(hauler, fclass).split(hull_cost(hauler, &self.config));
-                            for i in 0..4 {
-                                owed[i] += more[i];
-                            }
-                        }
-                        owed
-                    };
-                    let own = owed_with(&|h, c| roster.map_or(DesignBill::BASICS, |r| r.bill_for(h, c)));
-                    // **The twins, where the yard can pay them for the whole order.**
-                    match roster.and_then(|r| r.twin()) {
-                        Some(twin) => {
-                            let twins = owed_with(&|_, _| twin);
-                            let owed = twins.iter().fold(Price::ZERO, |a, &b| a + b);
-                            if self.payable(center, &twins, (cost - owed).max(Price::ZERO)) {
-                                twins
-                            } else {
-                                own
-                            }
-                        }
-                        None => own,
-                    }
-                };
-                let Some(build_mix) = self.take_order(p, center, cost, &refined, Some((hull_type, class))) else {
-                    // Put anything taken from Reserve back, or the hulls vanish
-                    // on a build that never happened.
-                    for e in reused_miners {
-                        self.reserve_miners[p].push(e);
-                    }
-                    if let Some(e) = reused_freighter {
-                        self.reserve_freighters[p].push(e);
-                    }
-                    return None;
-                };
-                match (role, target) {
-                    (Role::Scout, _) => {
-                        // Under `PersistentSectors` (R-AC3), a paid-for replenishment
-                        // Scout inherits an outward heading from home through the
-                        // center that built it, instead of always pooling globally.
-                        // `normalized()` returns `ZERO` for a center at home itself,
-                        // which degrades to global pool for that one craft — the
-                        // correct degenerate case, not a special case to add.
-                        let heading = match doctrine.survey_strategy {
-                            SurveyStrategy::PersistentSectors => {
-                                let home = self.world.player_info.get(self.player_entity[p]).unwrap().home;
-                                let home_pos = *self.world.position.get(home).unwrap();
-                                center_pos.sub(home_pos).normalized()
-                            }
-                            SurveyStrategy::GlobalPool | SurveyStrategy::OpeningSectors => Vec3::ZERO,
-                        };
-                        // **Refund a survey craft that never launched**
-                        // (T-118). The bank was debited above, before the
-                        // object exists; `launch_survey` spawns nothing when
-                        // `choose_survey_target` finds nowhere to go, and the
-                        // minerals used to simply vanish. R-O86 removed most of
-                        // this path by refusing to *order* a scout with an
-                        // empty frontier — the residue is the frontier going
-                        // empty between the order and the dispatch, which the
-                        // mass ledger found as 8 hulls' worth of ore in a
-                        // 200-year bed.
-                        if !self.launch_survey(
-                            p,
-                            center_pos,
-                            heading,
-                            0,
-                            launch_delay,
-                            BuiltHull { hull: hull_type, class, mix: build_mix },
-                        ) {
-                            *self.held_at_mut(center).unwrap() = bank_before;
-                        }
-                    }
-                    (Role::Sentry, _) => {
-                        self.spawn_sentry(
-                            p,
-                            BuiltHull { hull: hull_type, class, mix: build_mix },
-                            center,
-                            launch_delay,
-                        );
-                    }
-                    (Role::Freighter, Some(t)) => {
-                        let te = self.planet_entity[t.0 as usize];
-                        self.spawn_freighter(p, center, center_pos, te, hull_type, launch_delay);
-                        self.ship_backlog(p, te, hull_type.cargo_capacity(&self.config).kilotons());
-                    }
-                    (r, Some(t)) => {
-                        let te = self.planet_entity[t.0 as usize];
-                        if let Some(port) = blockade_port {
-                            self.bind(p as u32, port.0);
-                        }
-                        // A crew, not an operator (T-57). Reserved hulls first —
-                        // they are already paid for — then newly built ones.
-                        let mut reused = reused_miners.into_iter();
-                        for _ in 0..crew {
-                            match reused.next() {
-                                Some(e) => self.retask_miner(e, p, center, te),
-                                None => self.spawn_courier(
-                                    p,
-                                    r,
-                                    BuiltHull { hull: hull_type, class, mix: build_mix },
-                                    center,
-                                    te,
-                                    launch_delay,
-                                ),
-                            }
-                        }
-                        if paired_freighter {
-                            match reused_freighter {
-                                Some(e) => self.retask_freighter(e, p, center, te),
-                                None => self.spawn_freighter(p, center, center_pos, te, hauler, launch_delay),
-                            }
-                        }
-                    }
-                    (_, None) => {}
-                }
-                let stockpile_after = self.held_at(center).unwrap().basic_total();
-                self.log.push(
-                    self.clock,
-                    LogEvent::BuildApplied {
-                        player: p as u32,
-                        center: center_pid,
-                        order,
-                        cost: cost.kilotons(),
-                        refined_paid: build_mix.red + build_mix.green + build_mix.blue + build_mix.apex,
-                        stockpile_after: stockpile_after.kilotons(),
-                    },
-                );
-                Some(cost)
+                self.apply_hull_order(p, center, center_pos, (hull_type, class), candidates)
             }
+        }
+    }
+
+    /// [`BuildOrder::UpgradeInfrastructure`]: buy the next whole Band of works
+    /// if the holding can pay its color bill (T-06 split it out of
+    /// [`Self::apply_build_with`]; no behavior change).
+    fn apply_infra_upgrade(&mut self, p: usize, center: Entity) -> Option<Price> {
+        let center_pid = *self.world.planet_id.get(center).unwrap();
+        let order = BuildOrder::UpgradeInfrastructure;
+        let target = infra_step_price(self.world.factors.get(center).unwrap().infra, &self.config);
+        // **Pay the color bill, not the total** (T-73). Same
+        // `works_bill` the decision was made against.
+        let works = self.world.works.get(self.player_entity[p]).copied().unwrap_or_default();
+        // What a standing order leaves (§10.4); the whole holding when
+        // there is none.
+        let bank_now = self.available_at(center);
+        let bill = works_bill(target, &works);
+        let payable = can_pay_bill(&bank_now, &bill);
+        // What was actually committed is the bill, not the ladder step:
+        // `eta_works` divides the total, so an efficiency card makes the
+        // whole Band genuinely cheaper — and the yard is held for what was
+        // built (T-68), which has to be the same number.
+        let billed: Price = bill.iter().fold(Price::ZERO, |a, &b| a + b);
+        // A whole Band that bills nothing buys nothing — the top of the
+        // ladder — and must not hold a berth (appendix §D.40).
+        if payable && billed > Price::ZERO {
+            pay_bill(self.held_at_mut(center).unwrap(), &bill);
+            let f = self.world.factors.get_mut(center).unwrap();
+            // **A step is bought, not incremented.** The stock moves to
+            // exactly what standing at the next step costs, so the ladder
+            // stays the single source of the number (T-70, T-147).
+            let next = (infra_step_of(f.infra, &self.config) + 1).min(infra_steps_to_top());
+            f.infra = infra_price_at_step(next, &self.config);
+            let stockpile_after = self.held_at(center).unwrap().basic_total();
+            self.log.push(
+                self.clock,
+                LogEvent::BuildApplied {
+                    player: p as u32,
+                    center: center_pid,
+                    order,
+                    cost: billed.kilotons(),
+                    refined_paid: 0.0,
+                    stockpile_after: stockpile_after.kilotons(),
+                },
+            );
+            Some(billed)
+        } else {
+            None
+        }
+    }
+
+    /// [`BuildOrder::Hull`]: task the hull, price the order, take the bill and
+    /// dispatch what was built (T-06 split it out of [`Self::apply_build_with`];
+    /// no behavior change).
+    fn apply_hull_order(
+        &mut self,
+        p: usize,
+        center: Entity,
+        center_pos: Vec3,
+        ordered: (HullType, Class),
+        candidates: &[Candidate],
+    ) -> Option<Price> {
+        let (hull_type, class) = ordered;
+        let center_pid = *self.world.planet_id.get(center).unwrap();
+        let order = BuildOrder::Hull { hull_type, class };
+        if !self.roster_permits(p, hull_type) {
+            return None;
+        }
+        let doctrine = *self.world.doctrine.get(self.player_entity[p]).unwrap();
+        // The job is chosen here, after the object exists — not in the
+        // order, which is all a rival could read off the shipyard.
+        let tasking = self.autopilots[p].assign_role(&doctrine, hull_type, class, candidates);
+        let Some(Tasking { role, target }) = tasking else {
+            return None; // nothing worth building this hull for right now
+        };
+
+        // **A Scout with no frontier is a hull that never exists, and
+        // the minerals for it vanish** — design law #11, on the path
+        // that was 96% of all production.
+        //
+        // `try_spend_total` runs below, *before* the role is dispatched,
+        // and `launch_survey` spawns nothing when `choose_survey_target`
+        // returns `None`. So the bank was debited, the yard held for
+        // `build_time`, and no object came out: mass destroyed, not
+        // converted. `assign_role` cannot catch this — the seam hands it
+        // candidates, never the survey frontier (design law #15) — so it
+        // belongs here, beside the roster gate, under the same contract
+        // this arm already states: *a hull with no job worth doing is
+        // declined.*
+        //
+        // The policy also declines it now (`ProductionContext::survey_frontier`),
+        // which is where the 484,136 → 18,066 hull builds came from. This
+        // is the guard that keeps the invariant true for any *other*
+        // caller — a card, or a future autopilot.
+        if role == Role::Scout && self.survey_frontier(p) == 0 {
+            return None;
+        }
+
+        let (target, blockade_port) = match self.resolve_hull_target(p, center, role, target) {
+            Ok(t) => t,
+            Err(outcome) => return outcome,
+        };
+
+        // A Miner is produced together with the Freighter that hauls for
+        // it (roles §5: the nearest center produces both), so the pair is
+        // one economic act even though it is two objects.
+        let paired_freighter = role == Role::Miner;
+        // **The roster gate asks about the hull that will be built**
+        // (T-98), which is now a function of the pair — so it is decided
+        // below, once the target is known, and checked there.
+        if paired_freighter && target.is_none() {
+            return None;
+        }
+
+        let crew = self.order_crew(center, role, target, candidates);
+        let target_entity = target.map(|t| self.planet_entity[t.0 as usize]);
+        let (reused_miners, reused_freighter) = self.take_reserved_crew(p, role, target_entity, crew);
+        // **Price the hull that was ordered, not the hull the role
+        // implies.** R-O29 moved the hull choice into `BuildOrder`, but
+        // this line kept reading it back off the role — which agreed
+        // only because `role_hull_type` happened to invert
+        // `assign_role`. It stops agreeing the moment Doctrine can pick
+        // a heavier colonizer, and the failure would have been silent:
+        // a General hull bought at a Medium hull's price.
+        let mut cost = hull_cost(hull_type, &self.config) * (crew - reused_miners.len().min(crew)) as f64;
+        // **Derived from the pair, not from the role** (T-98). Decided
+        // once, here, and carried to both the price and the spawn — the
+        // two must read the same hull or a General hull gets bought at a
+        // Medium hull's price, which is the drift the comment above is
+        // about.
+        let hauler = match target_entity {
+            Some(te) if paired_freighter => self.freighter_hull(p, center, te, crew),
+            _ => role_hull_type(Role::Freighter),
+        };
+        if paired_freighter && !self.roster_permits(p, hauler) {
+            return None;
+        }
+        if paired_freighter && reused_freighter.is_none() {
+            cost += hull_cost(hauler, &self.config);
+        }
+
+        // **A picket does not claim the world it holds** (T-113).
+        //
+        // `targeted` means *a colonizer of ours is already flying
+        // there*, and it is never cleared — so marking it for a picket
+        // permanently deletes that world from this empire's own
+        // candidate list. `assign_role` sends pickets to the
+        // *highest-ranked* world, so at `picket_reserve = 128` the card
+        // was burning its own 128 best targets. A picket denies rivals
+        // (`picket_blocks` tests `holder != seat`); it must not deny
+        // its owner.
+        if let Some(t) = target {
+            if role != Role::Picket && role != Role::Freighter {
+                self.mark_targeted(p, t);
+            }
+        }
+        // **The whole order occupies one yard, so it launches as one
+        // unit** (T-68). The delay every hull in this order waits out is
+        // the order's own `t_build`, which is also exactly how long the
+        // caller holds the yard — one number, computed once, rather than
+        // a per-ship time that could drift from the occupancy. Hulls
+        // taken from Reserve are already built and leave at once.
+        let launch_delay = self.build_time(center, cost);
+        // Snapshot before the debit, so a dispatch that produces no
+        // object can put the bank back *exactly* (T-118).
+        // `try_spend_total` removes proportionally across the three
+        // colors, so a flat refund would change the mix — and the mix
+        // is the mineral economy's binding constraint (§6.19c).
+        // Nothing else touches this bank between here and the dispatch.
+        let bank_before = *self.held_at(center).unwrap();
+        // **What the order is paid in** — each Design's bill, for the
+        // hulls actually bought (R-TECH, the author's ruling: a card's
+        // cost in supers is what its Design writes do to production).
+        let bought = (crew - reused_miners.len().min(crew)) as f64;
+        let new_hauler = (paired_freighter && reused_freighter.is_none())
+            .then(|| (hauler, Standing::of(&doctrine).design_for(Role::Freighter).1));
+        let refined = self.order_bill(p, center, ordered, bought, new_hauler, cost);
+        let Some(build_mix) = self.take_order(p, center, cost, &refined, Some((hull_type, class))) else {
+            // Put anything taken from Reserve back, or the hulls vanish
+            // on a build that never happened.
+            for e in reused_miners {
+                self.reserve_miners[p].push(e);
+            }
+            if let Some(e) = reused_freighter {
+                self.reserve_freighters[p].push(e);
+            }
+            return None;
+        };
+        let plan = HullPlan {
+            role,
+            target,
+            crew,
+            reused_miners,
+            reused_freighter,
+            paired_freighter,
+            hauler,
+            blockade_port,
+            launch_delay,
+            bank_before,
+        };
+        self.dispatch_hulls(
+            p,
+            center,
+            center_pos,
+            &doctrine,
+            BuiltHull { hull: hull_type, class, mix: build_mix },
+            plan,
+        );
+        let stockpile_after = self.held_at(center).unwrap().basic_total();
+        self.log.push(
+            self.clock,
+            LogEvent::BuildApplied {
+                player: p as u32,
+                center: center_pid,
+                order,
+                cost: cost.kilotons(),
+                refined_paid: build_mix.red + build_mix.green + build_mix.blue + build_mix.apex,
+                stockpile_after: stockpile_after.kilotons(),
+            },
+        );
+        Some(cost)
+    }
+
+    /// Where a finished hull of `role` goes before it is paid for: a rival
+    /// port for a blockader, the best backlog for a hauler, else the
+    /// autopilot's `target`. Returns the target and the blockaded port, or
+    /// `Err` with the order's outcome when it ends here — declined, or served
+    /// by a hauler from Reserve (T-06, out of [`Self::apply_hull_order`]).
+    fn resolve_hull_target(
+        &mut self,
+        p: usize,
+        center: Entity,
+        role: Role,
+        target: Option<PlanetId>,
+    ) -> Result<(Option<PlanetId>, Option<Entity>), Option<Price>> {
+        // **A blockading picket goes to a rival port** (T-123), chosen
+        // here, before the bill, so a hull with nowhere to go is never
+        // paid for (T-125: `assign_role` hands a blockader no world).
+        let blockade_port =
+            if role == Role::Picket && self.blockade_doctrine(p) { self.blockade_target(p) } else { None };
+        if role == Role::Picket && target.is_none() && blockade_port.is_none() {
+            return Err(None);
+        }
+        let target = blockade_port.map(|e| *self.world.planet_id.get(e).unwrap()).or(target);
+        // **A hauler goes to the rock whose backlog is worth most**
+        // (T-147), chosen before the bill, so a hauler with no backlog
+        // to serve is never paid for.
+        let target = if role == Role::Freighter {
+            let rock = self.shipping[p].best.map(|i| Entity(self.shipping[p].backlog[i].0)).ok_or(None)?;
+            // One in Reserve goes first: it is already paid for.
+            let at = *self.world.position.get(rock).unwrap();
+            if let Some(e) = self.take_nearest_reserve(p, false, at) {
+                let hold = self.world.hull_type.get(e).copied().unwrap_or(HullType::MediumSystems);
+                self.retask_freighter(e, p, center, rock);
+                self.ship_backlog(p, rock, hold.cargo_capacity(&self.config).kilotons());
+                return Err(Some(Price::ZERO));
+            }
+            self.world.planet_id.get(rock).copied()
+        } else {
+            target
+        };
+        Ok((target, blockade_port))
+    }
+
+    /// How many miners an order of `role` crews: one, except a Miner's, which
+    /// reads the target's crew (T-06, out of [`Self::apply_hull_order`]).
+    fn order_crew(&self, center: Entity, role: Role, target: Option<PlanetId>, candidates: &[Candidate]) -> usize {
+        // Recycling is checked *before* pricing, because a hull taken
+        // from Reserve is not bought: the pair's cost is only the halves
+        // that still have to be built. A center that could not afford a
+        // new pair can therefore still open an outpost with idle hulls,
+        // which is the whole point — 39% of outpost-years were being
+        // spent on exhausted rocks.
+        // **The crew is the target's, not the doctrine's** (T-72). Read
+        // from the candidate list so it is bit-identical to what
+        // `mining_pair_cost` quoted; falling back to the deposit only if
+        // the target is not among the candidates.
+        if role == Role::Miner {
+            match target.map(|t| self.planet_entity[t.0 as usize]) {
+                Some(te) => candidates
+                    .iter()
+                    .find(|c| self.planet_entity[c.view.id.0 as usize] == te)
+                    .map_or_else(|| self.mining_crew_for(center, te), |c| c.mining_crew),
+                None => 1,
+            }
+        } else {
+            1
+        }
+    }
+
+    /// Hulls taken from Reserve for a mining order — one per crew slot and one
+    /// hauler, nearest first — when recycling is on (T-06, out of
+    /// [`Self::apply_hull_order`]).
+    fn take_reserved_crew(
+        &mut self,
+        p: usize,
+        role: Role,
+        target_entity: Option<Entity>,
+        crew: usize,
+    ) -> (Vec<Entity>, Option<Entity>) {
+        match (self.config.recycle_mining_pairs, role, target_entity) {
+            (true, Role::Miner, Some(te)) => {
+                let at = *self.world.position.get(te).unwrap();
+                // One reserved hull per crew slot, nearest first.
+                let mut taken = Vec::new();
+                while taken.len() < crew {
+                    match self.take_nearest_reserve(p, true, at) {
+                        Some(e) => taken.push(e),
+                        None => break,
+                    }
+                }
+                (taken, self.take_nearest_reserve(p, false, at))
+            }
+            _ => (Vec::new(), None),
+        }
+    }
+
+    /// **What an order is paid in** — each Design's bill for the hulls
+    /// actually bought, or the roster's twins where the yard can pay them for
+    /// the whole order (T-06, out of [`Self::apply_hull_order`]).
+    fn order_bill(
+        &self,
+        p: usize,
+        center: Entity,
+        ordered: (HullType, Class),
+        bought: f64,
+        new_hauler: Option<(HullType, Class)>,
+        cost: Price,
+    ) -> [Price; 4] {
+        let (hull_type, class) = ordered;
+        let roster = self.world.roster.get(self.player_entity[p]);
+        let owed_with = |bill_of: &dyn Fn(HullType, Class) -> DesignBill| {
+            let (mut owed, _) = bill_of(hull_type, class).split(hull_cost(hull_type, &self.config) * bought);
+            if let Some((hauler, fclass)) = new_hauler {
+                let (more, _) = bill_of(hauler, fclass).split(hull_cost(hauler, &self.config));
+                for i in 0..4 {
+                    owed[i] += more[i];
+                }
+            }
+            owed
+        };
+        let own = owed_with(&|h, c| roster.map_or(DesignBill::BASICS, |r| r.bill_for(h, c)));
+        // **The twins, where the yard can pay them for the whole order.**
+        match roster.and_then(|r| r.twin()) {
+            Some(twin) => {
+                let twins = owed_with(&|_, _| twin);
+                let owed = twins.iter().fold(Price::ZERO, |a, &b| a + b);
+                if self.payable(center, &twins, (cost - owed).max(Price::ZERO)) {
+                    twins
+                } else {
+                    own
+                }
+            }
+            None => own,
+        }
+    }
+
+    /// Sends what an order built, or took from Reserve, on its way (T-06, out
+    /// of [`Self::apply_hull_order`]).
+    fn dispatch_hulls(
+        &mut self,
+        p: usize,
+        center: Entity,
+        center_pos: Vec3,
+        doctrine: &Doctrine,
+        built: BuiltHull,
+        plan: HullPlan,
+    ) {
+        let HullPlan {
+            role,
+            target,
+            crew,
+            reused_miners,
+            reused_freighter,
+            paired_freighter,
+            hauler,
+            blockade_port,
+            launch_delay,
+            bank_before,
+        } = plan;
+        let hull_type = built.hull;
+        match (role, target) {
+            (Role::Scout, _) => {
+                // Under `PersistentSectors` (R-AC3), a paid-for replenishment
+                // Scout inherits an outward heading from home through the
+                // center that built it, instead of always pooling globally.
+                // `normalized()` returns `ZERO` for a center at home itself,
+                // which degrades to global pool for that one craft — the
+                // correct degenerate case, not a special case to add.
+                let heading = match doctrine.survey_strategy {
+                    SurveyStrategy::PersistentSectors => {
+                        let home = self.world.player_info.get(self.player_entity[p]).unwrap().home;
+                        let home_pos = *self.world.position.get(home).unwrap();
+                        center_pos.sub(home_pos).normalized()
+                    }
+                    SurveyStrategy::GlobalPool | SurveyStrategy::OpeningSectors => Vec3::ZERO,
+                };
+                // **Refund a survey craft that never launched**
+                // (T-118). The bank was debited above, before the
+                // object exists; `launch_survey` spawns nothing when
+                // `choose_survey_target` finds nowhere to go, and the
+                // minerals used to simply vanish. R-O86 removed most of
+                // this path by refusing to *order* a scout with an
+                // empty frontier — the residue is the frontier going
+                // empty between the order and the dispatch, which the
+                // mass ledger found as 8 hulls' worth of ore in a
+                // 200-year bed.
+                if !self.launch_survey(p, center_pos, heading, 0, launch_delay, built) {
+                    *self.held_at_mut(center).unwrap() = bank_before;
+                }
+            }
+            (Role::Sentry, _) => {
+                self.spawn_sentry(p, built, center, launch_delay);
+            }
+            (Role::Freighter, Some(t)) => {
+                let te = self.planet_entity[t.0 as usize];
+                self.spawn_freighter(p, center, center_pos, te, hull_type, launch_delay);
+                self.ship_backlog(p, te, hull_type.cargo_capacity(&self.config).kilotons());
+            }
+            (r, Some(t)) => {
+                let te = self.planet_entity[t.0 as usize];
+                if let Some(port) = blockade_port {
+                    self.bind(p as u32, port.0);
+                }
+                // A crew, not an operator (T-57). Reserved hulls first —
+                // they are already paid for — then newly built ones.
+                let mut reused = reused_miners.into_iter();
+                for _ in 0..crew {
+                    match reused.next() {
+                        Some(e) => self.retask_miner(e, p, center, te),
+                        None => self.spawn_courier(p, r, built, center, te, launch_delay),
+                    }
+                }
+                if paired_freighter {
+                    match reused_freighter {
+                        Some(e) => self.retask_freighter(e, p, center, te),
+                        None => self.spawn_freighter(p, center, center_pos, te, hauler, launch_delay),
+                    }
+                }
+            }
+            (_, None) => {}
         }
     }
 
