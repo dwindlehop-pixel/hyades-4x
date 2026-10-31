@@ -1173,13 +1173,13 @@ R-O48, R-O49 *(principle ratified; magnitudes open)*, R-O50, R-O57 *(resolved in
 engine)*, R-O58 and R-O58b *(both resolved; the radius prediction became a
 cost-ladder target)*, R-O59, R-O60, R-O61, R-O62.
 
-**Opened by the shell-model landing:** **R-O64** — roles §6's 0 / 1 / 2 cargo
+**Opened by the shell-model landing:** **[R-O64](https://github.com/dwindlehop-pixel/hyades-4x/issues/289)** — roles §6's 0 / 1 / 2 cargo
 ladder is a *unit count*, and the shell model makes capacity a mass on a cubic
 ladder, so the two cannot both be magnitudes. Resolved in the engine by keeping
 the ordinal content (Limited zero, strictly increasing thereafter) and taking
 the magnitudes from geometry; the unit count is retired. Flagged because §6
 calls 0/1/2 *confirmed* and this reinterprets what it confirmed.
-**R-O65** — `hull_thrust_to_mass` still carries a 1.2 / 1.1 / 1.0 ladder across
+**[R-O65](https://github.com/dwindlehop-pixel/hyades-4x/issues/290)** — `hull_thrust_to_mass` still carries a 1.2 / 1.1 / 1.0 ladder across
 Systems sizes, which the shell model says should be flat (thrust and dry mass
 both scale with area). Not flattened here: it is an MC-tuned combat surface and
 needs ratification. It reaches only `arena`/`combat` — the sim flies every hull
@@ -1199,28 +1199,28 @@ than a power spike.
 
 | Code | Question |
 |---|---|
-| R-O3 | write the "intra-round ordering is immaterial" assumption into the contract |
-| R-O6 | is a pass observable? (decides weak vs. strict dominance of unspent actions) |
+| [R-O3](https://github.com/dwindlehop-pixel/hyades-4x/issues/291) | write the "intra-round ordering is immaterial" assumption into the contract |
+| [R-O6](https://github.com/dwindlehop-pixel/hyades-4x/issues/292) | is a pass observable? (decides weak vs. strict dominance of unspent actions) |
 | ~~R-O8~~ | ~~Latent is co-extensive with Cyan → Red-type's (2,2,0) profile.~~ **Resolved** — §10's L1 amendment block: the co-extension was a stale pre-swap domain table, not a true design fact |
 | R-O9 | N=2 seats only Blue and Red; Green never appears |
-| R-O11 | where the directed counter-cycle lives; write `f(r)` into contract §5 |
+| [R-O11](https://github.com/dwindlehop-pixel/hyades-4x/issues/293) | where the directed counter-cycle lives; write `f(r)` into contract §5 |
 | R-O12 | `FAIR_COUNTS` rejects 18 |
-| R-O13 | is a target part of the move, or a sub-decision? (survives for tier-0 slants that carry targets) |
-| R-O19 | size the convexity of the σ→value curve |
-| R-O21 | fix the `σ = T × concentration(spread)` mapping |
-| R-O22 | tier-1 reach σ — a fourth spread point beyond Peak, or Peak at higher `T`? *(shown not load-bearing)* |
-| R-O23 | `σ_hi` as a function of adjacency share `2/(N−1)` |
-| R-O24 | actions/turn ramp as `σ_hi` rising with round |
-| R-O27 | `Doctrine` has no diplomatic fields |
+| [R-O13](https://github.com/dwindlehop-pixel/hyades-4x/issues/294) | is a target part of the move, or a sub-decision? (survives for tier-0 slants that carry targets) |
+| [R-O19](https://github.com/dwindlehop-pixel/hyades-4x/issues/295) | size the convexity of the σ→value curve |
+| [R-O21](https://github.com/dwindlehop-pixel/hyades-4x/issues/296) | fix the `σ = T × concentration(spread)` mapping |
+| [R-O22](https://github.com/dwindlehop-pixel/hyades-4x/issues/297) | tier-1 reach σ — a fourth spread point beyond Peak, or Peak at higher `T`? *(shown not load-bearing)* |
+| [R-O23](https://github.com/dwindlehop-pixel/hyades-4x/issues/298) | `σ_hi` as a function of adjacency share `2/(N−1)` |
+| [R-O24](https://github.com/dwindlehop-pixel/hyades-4x/issues/299) | actions/turn ramp as `σ_hi` rising with round |
+| [R-O27](https://github.com/dwindlehop-pixel/hyades-4x/issues/300) | `Doctrine` has no diplomatic fields |
 | R-O28 | Design has no engine component; blocks σ_vector measurement |
 | R-O34 | ratify L1 as a stated law |
 | ~~R-O42b~~ | ~~confirm class names~~ — **ratified** as Meadow / Spur / Tor / Cairn / Delta / Ford / Range / Strait / Scarp, one class per hull (Technology §1.6) |
 | R-O47b | does a retrofit apply retroactively, or `on_new_production` only? |
-| R-O49b | set `k` per ladder whole Band and `m` per Design card, arena-measured |
-| **R-O51** | ratify the three-way σ decomposition — σ_commit / σ_kinetic / σ_vector — with σ_kinetic derived from the acceleration signature, not mass or hull count |
-| **R-O52** | concealment-by-offset: cost the thrust-and-armament combo that holds `a` constant while σ_commit is large. Concealment is a combo property, not a card property |
-| **R-O53** | the observable-channel enumeration is **open**. Specify the structural channel (infrastructure, orbitals) and the economic channel (drawdown, exchange pressure), each with its own range / latency / maskability profile |
-| **R-O54** | is planetside development quieter at long range than a burn? If so, Growth and Production are structurally more inscrutable than Warfare, independent of card choice |
+| [R-O49b](https://github.com/dwindlehop-pixel/hyades-4x/issues/301) | set `k` per ladder whole Band and `m` per Design card, arena-measured |
+| **[R-O51](https://github.com/dwindlehop-pixel/hyades-4x/issues/302)** | ratify the three-way σ decomposition — σ_commit / σ_kinetic / σ_vector — with σ_kinetic derived from the acceleration signature, not mass or hull count |
+| **[R-O52](https://github.com/dwindlehop-pixel/hyades-4x/issues/303)** | concealment-by-offset: cost the thrust-and-armament combo that holds `a` constant while σ_commit is large. Concealment is a combo property, not a card property |
+| **[R-O53](https://github.com/dwindlehop-pixel/hyades-4x/issues/304)** | the observable-channel enumeration is **open**. Specify the structural channel (infrastructure, orbitals) and the economic channel (drawdown, exchange pressure), each with its own range / latency / maskability profile |
+| **[R-O54](https://github.com/dwindlehop-pixel/hyades-4x/issues/305)** | is planetside development quieter at long range than a burn? If so, Growth and Production are structurally more inscrutable than Warfare, independent of card choice |
 | **R-O95** | ~~can a hull be worse at freight, faster empty and slower laden at once?~~ **Answered: no, and the answer is an identity** — `a_empty / a_laden = 1 + C / M_dry`, exactly, at every configuration (§9.2, pinned by `sim::tests::the_acceleration_swing_is_the_cargo_efficiency`). What stays open is the **magnitude** the first Warfare card should take: the Contact colonizer class's drive fraction `φ`, which is blocked on T-97 making `φ` per-`Class` at all. Carried as **R-WAR4** (`Hyades_warfare_tree.md` §7.3) |
 
 **Pre-existing, depended on:** R-5 (full clock math), R-7/R-9 (round-1 cost

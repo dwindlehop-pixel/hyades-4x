@@ -1,5 +1,11 @@
 # Hyades — implemented register
 
+**Frozen at the move to GitHub issues (commit `27e06ca`).** Nothing is added
+here any more: a to-do issue that closes is its own record, together with the PR
+that closed it. Where an entry below names a `T-nn` that is still open, its issue
+is in the index of [`hyades_todo.md`](hyades_todo.md), and an open R-code is in
+[`hyades_decisions.md`](hyades_decisions.md).
+
 The entries below were built, measured or closed, and were moved here from
 Band A of `docs/hyades_todo.md` so that Band A lists only work that is ready to
 build and not yet done. Each entry is moved **verbatim**, in the order it held in

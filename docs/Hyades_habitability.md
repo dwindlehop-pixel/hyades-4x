@@ -243,18 +243,18 @@ at the horizon against the "fully colonize given time" bar directly.
 
 ## 6. Open ratification points
 
-**R-H1** starting distribution parameters (table above) — first guess,
-needs an MC sweep once implemented. **R-H2** should composition correlate
-spatially with HZ position, or stay independent. **R-H3** confirm the
-signed-HZ-offset (hot/cold as separate axes) reading. **R-H4** smooth taper
-vs. hard cliff at the tolerance boundary. **R-H5** confirm biosphere stays
-a separate factor, not folded into this. **R-H6** confirm player-relative
+**[R-H1](https://github.com/dwindlehop-pixel/hyades-4x/issues/184)** starting distribution parameters (table above) — first guess,
+needs an MC sweep once implemented. **[R-H2](https://github.com/dwindlehop-pixel/hyades-4x/issues/185)** should composition correlate
+spatially with HZ position, or stay independent. **[R-H3](https://github.com/dwindlehop-pixel/hyades-4x/issues/186)** confirm the
+signed-HZ-offset (hot/cold as separate axes) reading. **[R-H4](https://github.com/dwindlehop-pixel/hyades-4x/issues/187)** smooth taper
+vs. hard cliff at the tolerance boundary. **[R-H5](https://github.com/dwindlehop-pixel/hyades-4x/issues/188)** confirm biosphere stays
+a separate factor, not folded into this. **[R-H6](https://github.com/dwindlehop-pixel/hyades-4x/issues/189)** confirm player-relative
 `K` (an owned colony's ceiling can grow as its owner's tolerances improve)
-is a wanted feature, not an oversight to close off. **R-H7** reframe
+is a wanted feature, not an oversight to close off. **[R-H7](https://github.com/dwindlehop-pixel/hyades-4x/issues/190)** reframe
 gravity's Band sub-score as a population-health (LD50-like) statistic
 rather than a raw g-distance score, and work out whether such a statistic
 can satisfy the shared `[4, 8]` Band step-factor constraint at all
-(§2.3, `Hyades_mineral_cost_curve.md` §2.6). **R-H8** the same reframing
+(§2.3, `Hyades_mineral_cost_curve.md` §2.6). **[R-H8](https://github.com/dwindlehop-pixel/hyades-4x/issues/191)** the same reframing
 for radiation's Band sub-score (§2.4).
 
 **Out of scope here:** actual card text/costs for tolerance-widening or

@@ -677,32 +677,32 @@ the measurement into the target (§4.10).
 
 | Code | Question | What would settle it |
 |---|---|---|
-| R-L0 | per-hull slot tables | the arena (design law #4) |
-| R-L1 | shield regeneration across what | a decision, with warfare §2 |
+| [R-L0](https://github.com/dwindlehop-pixel/hyades-4x/issues/215) | per-hull slot tables | the arena (design law #4) |
+| [R-L1](https://github.com/dwindlehop-pixel/hyades-4x/issues/216) | shield regeneration across what | a decision, with warfare §2 |
 | R-O60 / T-04 | magazine mass on ordnance families — **built for missiles (T-139, §2.8)** | torpedoes, when a card builds the family |
-| R-O65 | flatten `hull_thrust_to_mass`? | explicit ratification — MC-tuned surface |
+| [R-O65](https://github.com/dwindlehop-pixel/hyades-4x/issues/290) | flatten `hull_thrust_to_mass`? | explicit ratification — MC-tuned surface |
 | R-O47b / T-08 | `on_refit` is unbuilt | engine work |
 | R-CG* | is the counter-graph acyclic? | a design decision |
 | R-XM* | apex, and what it is for | a design pass |
-| R-TECH1 | **the objective is specified (§4) and not built** — no bed, no table | T-131 |
-| R-TECH2 | does capability saturate on the bed? | blocked on R-TECH1 |
-| R-TECH5 | fit Bradley–Terry by maximum likelihood on the Elo scale, not sequential updates — *recommended* | author |
-| R-TECH9 | weight hulls by dry mass, not count or volume — *recommended*; the author decides on the ratio-scale table, which may already carry mass or volume | author |
-| R-TECH11 | equal-spend budget `B` = ten General hulls — *recommended* | author |
-| R-TECH12 | `D_long`, and a closing long-range bed | a ranged family or beam falloff, then a sweep |
+| [R-TECH1](https://github.com/dwindlehop-pixel/hyades-4x/issues/306) | **the objective is specified (§4) and not built** — no bed, no table | T-131 |
+| [R-TECH2](https://github.com/dwindlehop-pixel/hyades-4x/issues/307) | does capability saturate on the bed? | blocked on R-TECH1 |
+| [R-TECH5](https://github.com/dwindlehop-pixel/hyades-4x/issues/308) | fit Bradley–Terry by maximum likelihood on the Elo scale, not sequential updates — *recommended* | author |
+| [R-TECH9](https://github.com/dwindlehop-pixel/hyades-4x/issues/309) | weight hulls by dry mass, not count or volume — *recommended*; the author decides on the ratio-scale table, which may already carry mass or volume | author |
+| [R-TECH11](https://github.com/dwindlehop-pixel/hyades-4x/issues/310) | equal-spend budget `B` = ten General hulls — *recommended* | author |
+| [R-TECH12](https://github.com/dwindlehop-pixel/hyades-4x/issues/311) | `D_long`, and a closing long-range bed | a ranged family or beam falloff, then a sweep |
 | ~~R-TECH14~~ | ~~combat beds tie every armed Design~~ — **resolved by T-132**, warfare §8.18 | — |
-| R-TECH15 | the table's storage and staleness stamp — `data/design_ratings.tsv`, stamped with the engine commit; no harness reads it back yet | a reader that refuses a stale stamp |
-| R-TECH18 | **an unlock reaches no build** — no Design resolver reads the roster. **Advanced (T-139):** the missile card reaches builds through its Doctrine write, which `Standing::design_for(Sentry)` reads; an unlock alone still reaches none (§9.5) | a resolver; T-25 |
-| R-TECH19 | the offensive beds' judge read as dry mass **holding the field** (neither wrecked nor withdrawn), horizon 1 yr — *recommended* | author |
-| R-TECH3 | the card surface beyond `UnlockDesign` | blocked on R-L0 and R-O65 |
-| R-TECH26 | drawing energy from a neutron star (§7.1.3; galaxy R-G7, T-148) | R-G7's choice of where energy enters a mass-conserving model, then a card-workflow pass |
-| R-TECH4 | a miniaturization analogue inside this tree? | a decision — *recommend no* |
+| [R-TECH15](https://github.com/dwindlehop-pixel/hyades-4x/issues/312) | the table's storage and staleness stamp — `data/design_ratings.tsv`, stamped with the engine commit; no harness reads it back yet | a reader that refuses a stale stamp |
+| [R-TECH18](https://github.com/dwindlehop-pixel/hyades-4x/issues/313) | **an unlock reaches no build** — no Design resolver reads the roster. **Advanced (T-139):** the missile card reaches builds through its Doctrine write, which `Standing::design_for(Sentry)` reads; an unlock alone still reaches none (§9.5) | a resolver; T-25 |
+| [R-TECH19](https://github.com/dwindlehop-pixel/hyades-4x/issues/314) | the offensive beds' judge read as dry mass **holding the field** (neither wrecked nor withdrawn), horizon 1 yr — *recommended* | author |
+| [R-TECH3](https://github.com/dwindlehop-pixel/hyades-4x/issues/315) | the card surface beyond `UnlockDesign` | blocked on R-L0 and R-O65 |
+| [R-TECH26](https://github.com/dwindlehop-pixel/hyades-4x/issues/316) | drawing energy from a neutron star (§7.1.3; galaxy R-G7, T-148) | R-G7's choice of where energy enters a mass-conserving model, then a card-workflow pass |
+| [R-TECH4](https://github.com/dwindlehop-pixel/hyades-4x/issues/317) | a miniaturization analogue inside this tree? | a decision — *recommend no* |
 | T-25 | `enforce_roster` defaults off because there is no unlock path | the card system |
-| R-TECH20 | magnetar matter as a Technology option (§7.1.2) | a design pass naming the write and its mass cost |
-| R-TECH22 | the drive card's slot, slant and factor `f` — `TIER0[12]` recommended, replacing an unlock that reaches no build (§8.1) | the author; `f` after stage 4 of T-136 |
-| R-TECH24 | **the missile card's slot, slant and sentry ratio** — `TIER0[13]` (Balanced) and `ρ = 1e-5` recommended (§9.1, §9.3) | the author; T-140 sweeps `ρ` and its thresholds |
-| R-TECH25 | **which super dominates which tree** (§3.1). Structural constraint: each tree's basic feeds exactly two supers (galaxy §4.8, §3.2), so a tree's two cheap supers are fixed by the recipes; whether the dominant super must be one of those two is itself undecided | the author |
-| R-TECH23 | where the drive state lives — a `DesignWrite` fold in `CardId` order beside `Works` (recommended) or a `WorksWrite` variant (§8.4) | the author |
+| [R-TECH20](https://github.com/dwindlehop-pixel/hyades-4x/issues/318) | magnetar matter as a Technology option (§7.1.2) | a design pass naming the write and its mass cost |
+| [R-TECH22](https://github.com/dwindlehop-pixel/hyades-4x/issues/319) | the drive card's slot, slant and factor `f` — `TIER0[12]` recommended, replacing an unlock that reaches no build (§8.1) | the author; `f` after stage 4 of T-136 |
+| [R-TECH24](https://github.com/dwindlehop-pixel/hyades-4x/issues/320) | **the missile card's slot, slant and sentry ratio** — `TIER0[13]` (Balanced) and `ρ = 1e-5` recommended (§9.1, §9.3) | the author; T-140 sweeps `ρ` and its thresholds |
+| [R-TECH25](https://github.com/dwindlehop-pixel/hyades-4x/issues/321) | **which super dominates which tree** (§3.1). Structural constraint: each tree's basic feeds exactly two supers (galaxy §4.8, §3.2), so a tree's two cheap supers are fixed by the recipes; whether the dominant super must be one of those two is itself undecided | the author |
+| [R-TECH23](https://github.com/dwindlehop-pixel/hyades-4x/issues/322) | where the drive state lives — a `DesignWrite` fold in `CardId` order beside `Works` (recommended) or a `WorksWrite` variant (§8.4) | the author |
 
 ---
 

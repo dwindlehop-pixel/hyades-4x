@@ -377,14 +377,14 @@ world. **R-IND8 — open**, and it is the join with Warfare.
 
 | Code | Question | What would settle it |
 |---|---|---|
-| R-IND2 | is Warding an employment share or a Design hardness coefficient? | a design pass; changes what Warfare can target |
-| R-IND8 | captured infrastructure | a design pass, with Warfare |
+| [R-IND2](https://github.com/dwindlehop-pixel/hyades-4x/issues/192) | is Warding an employment share or a Design hardness coefficient? | a design pass; changes what Warfare can target |
+| [R-IND8](https://github.com/dwindlehop-pixel/hyades-4x/issues/195) | captured infrastructure | a design pass, with Warfare |
 | R-O59 / T-03 | slag as a bank entry | engine work |
-| R-PROD1 | which `Works` fields each card tier writes | the dispersion constraint, then MC |
-| R-PROD2 | what a Production card may do to the hull ladder | a decision — probably "nothing" |
-| R-PROD3 | fleet-years' saturation point on the bed | one cheap measurement |
-| R-TREE10 | re-measure the composite with Production in volume | the full 32-knob bed |
-| R-PROD4 | capitals and synthesis at pop-Band IV | a design pass, with Technology |
+| [R-PROD1](https://github.com/dwindlehop-pixel/hyades-4x/issues/256) | which `Works` fields each card tier writes | the dispersion constraint, then MC |
+| [R-PROD2](https://github.com/dwindlehop-pixel/hyades-4x/issues/257) | what a Production card may do to the hull ladder | a decision — probably "nothing" |
+| [R-PROD3](https://github.com/dwindlehop-pixel/hyades-4x/issues/258) | fleet-years' saturation point on the bed | one cheap measurement |
+| [R-TREE10](https://github.com/dwindlehop-pixel/hyades-4x/issues/268) | re-measure the composite with Production in volume | the full 32-knob bed |
+| [R-PROD4](https://github.com/dwindlehop-pixel/hyades-4x/issues/259) | capitals and synthesis at pop-Band IV | a design pass, with Technology |
 | T-74 | fabrication rate as a measured quantity | engine work; blocks R-P16 and Growth |
 | T-92 | 85% of bank inflow is a center mining its own planet | a census, then a mechanism |
 

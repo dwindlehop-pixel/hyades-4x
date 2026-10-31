@@ -252,17 +252,17 @@ call site.
 
 ## 7. Open ratification points
 
-- **R-L0** — concrete per-hull slot tables (deferred to tuning; the model is
+- **[R-L0](https://github.com/dwindlehop-pixel/hyades-4x/issues/215)** — concrete per-hull slot tables (deferred to tuning; the model is
   the deliverable, not the numbers).
-- **R-L1** — shield behavior with no in-combat rounds: per-engagement buffer
+- **[R-L1](https://github.com/dwindlehop-pixel/hyades-4x/issues/216)** — shield behavior with no in-combat rounds: per-engagement buffer
   that resets between engagements, rather than mid-exchange regen? (ties to
   §5/R-L2.)
 - **R-L2** — the geometric engagement resolution: single closing-pass
   exchange vs. repeated passes; how it feeds `simulation_model.md` §4's wreck
   roll. Belongs with that section, cross-referenced here.
-- **R-L3** — where unlocked-tier state lives: player-component vs. resource
+- **[R-L3](https://github.com/dwindlehop-pixel/hyades-4x/issues/217)** — where unlocked-tier state lives: player-component vs. resource
   (leaning component, per `Hyades_vehicle_roles.md` §9).
-- **R-L4** — do ELEC steering aids and hull size affect the flight model
+- **[R-L4](https://github.com/dwindlehop-pixel/hyades-4x/issues/218)** — do ELEC steering aids and hull size affect the flight model
   (agility) only in combat geometry, or also cruise acceleration? (Simplest:
   combat-only; flag if cruise should differ.)
 - ~~**R-L5** — is `dry_mass` per hull-type (General heavier than Limited),

@@ -98,7 +98,7 @@ Until 1–4 exist, cards beyond round 1 can be *named and slotted* (saga beats) 
 ---
 
 ## 9. Ratification points
-- **R-C1** closed list of legal `target_rule` kinds · **R-C2** realization curves per order family · **R-C3** scaling house-rules per tree · **R-C4** lock the engine-efficiency example (magnitude/class/singleton) once hulls exist · **R-C5** order precedence algebra · **R-C6** `V` state-vector + exact-vs-estimator · **R-C7** balance metrics + thresholds
+- **[R-C1](https://github.com/dwindlehop-pixel/hyades-4x/issues/148)** closed list of legal `target_rule` kinds · **[R-C2](https://github.com/dwindlehop-pixel/hyades-4x/issues/149)** realization curves per order family · **[R-C3](https://github.com/dwindlehop-pixel/hyades-4x/issues/150)** scaling house-rules per tree · **[R-C4](https://github.com/dwindlehop-pixel/hyades-4x/issues/151)** lock the engine-efficiency example (magnitude/class/singleton) once hulls exist · **[R-C5](https://github.com/dwindlehop-pixel/hyades-4x/issues/152)** order precedence algebra · **[R-C6](https://github.com/dwindlehop-pixel/hyades-4x/issues/153)** `V` state-vector + exact-vs-estimator · **[R-C7](https://github.com/dwindlehop-pixel/hyades-4x/issues/154)** balance metrics + thresholds
 
 ---
 

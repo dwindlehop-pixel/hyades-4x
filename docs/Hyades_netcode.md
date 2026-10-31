@@ -891,21 +891,21 @@ Layered on top:
 | **R-NET1** | ~~Fog under full replication~~ — **closed (Rev 2):** the command layer presents perfect information; there is no fog to protect. Superseded by **R-NET13**. | — |
 | **R-NET2** | ~~Server relay vs. gossip~~ — **resolved (Rev 4):** no server relay; P2P gossip tier with capped ingress (§3.2) | — |
 | **R-NET3** | ~~12-seat cap~~ — **resolved (Rev 3):** 18 seats, degree-capped overlay (§3.1) | — |
-| **R-NET4** | Frame payload field widths (`card_id`, `target_kind`/`target_ref`) | **R-C1** |
-| **R-NET5** | Merkle leaf partition and checkpoint cadence | — |
-| **R-NET6** | Does a defaulted/timed-out round consume the action or refund it? | R-2 (action economy) |
-| **R-NET7** | Headless replay throughput vs. match length; snapshot-assisted catch-up needed? | — |
-| **R-NET8** | Even-split behavior under `SimpleMajority` | — |
+| **[R-NET4](https://github.com/dwindlehop-pixel/hyades-4x/issues/238)** | Frame payload field widths (`card_id`, `target_kind`/`target_ref`) | **R-C1** |
+| **[R-NET5](https://github.com/dwindlehop-pixel/hyades-4x/issues/239)** | Merkle leaf partition and checkpoint cadence | — |
+| **[R-NET6](https://github.com/dwindlehop-pixel/hyades-4x/issues/240)** | Does a defaulted/timed-out round consume the action or refund it? | R-2 (action economy) |
+| **[R-NET7](https://github.com/dwindlehop-pixel/hyades-4x/issues/241)** | Headless replay throughput vs. match length; snapshot-assisted catch-up needed? | — |
+| **[R-NET8](https://github.com/dwindlehop-pixel/hyades-4x/issues/242)** | Even-split behavior under `SimpleMajority` | — |
 | **R-NET9** | ~~Transcript privacy~~ — **closed (Rev 2):** publishable; retention is a storage question. | — |
-| **R-NET10** | Enable `simd128` in the pinned build? | — |
+| **[R-NET10](https://github.com/dwindlehop-pixel/hyades-4x/issues/243)** | Enable `simd128` in the pinned build? | — |
 | **R-NET11** | Ratify H3 (NaN in hashed state is fatal) as a design law — **seeded:** `no_nan_or_infinity_reaches_replicated_state` guards the report and snapshot today; the fatal-error form waits on the digest | R-NET5 |
 | **R-NET12** | ~~Observer feed delay~~ — **closed (Rev 2):** unnecessary under perfect information. | — |
 | **R-NET13** | Ratify §2.1's one-directional seam as a design law; audit the autopilot for any read of global state where a player-relative knowledge view is required — **audit done:** the `Autopilot` trait structurally cannot reach global state, but the views handed to it can. Two findings, B4 (`Knowledge` stores membership, not observations, so every read is zero-lag ground truth) and B5 (colonization filters on instantaneous global ownership). See the engine-status block | T-33, T-34 |
-| **R-NET14** | Pin the circulant offset table in genesis; ~~extend `tests/determinism.rs` from 12 to 18 seats~~ **done** — 18 seats bit-identical, +6 s | — |
-| **R-NET15** | Measure the state-digest cost at an 18-seat galaxy. Planet count at 18 seats is unmeasured — do not extrapolate it from the 12-seat figure. If a full rehash per round is too slow, adopt dirty-chunk Merkle updates rather than lengthening the cadence | R-NET5 |
-| **R-NET16** | Match-start admission rule: what overlay connectivity threshold begins play, and how long stragglers keep negotiating before the seat is dropped to autopilot (§5.3) | R-NET14 |
-| **R-NET17** | Lobby-published liveness beacon as a second eclipse tell — worth putting per-round data back on the server, or does re-sampling suffice? | R-NET2 |
-| **R-NET18** | Ratify `m_ingress` (spectator links per seat) and spectator gossip degree `d` | R-NET2 |
+| **[R-NET14](https://github.com/dwindlehop-pixel/hyades-4x/issues/244)** | Pin the circulant offset table in genesis; ~~extend `tests/determinism.rs` from 12 to 18 seats~~ **done** — 18 seats bit-identical, +6 s | — |
+| **[R-NET15](https://github.com/dwindlehop-pixel/hyades-4x/issues/245)** | Measure the state-digest cost at an 18-seat galaxy. Planet count at 18 seats is unmeasured — do not extrapolate it from the 12-seat figure. If a full rehash per round is too slow, adopt dirty-chunk Merkle updates rather than lengthening the cadence | R-NET5 |
+| **[R-NET16](https://github.com/dwindlehop-pixel/hyades-4x/issues/246)** | Match-start admission rule: what overlay connectivity threshold begins play, and how long stragglers keep negotiating before the seat is dropped to autopilot (§5.3) | R-NET14 |
+| **[R-NET17](https://github.com/dwindlehop-pixel/hyades-4x/issues/247)** | Lobby-published liveness beacon as a second eclipse tell — worth putting per-round data back on the server, or does re-sampling suffice? | R-NET2 |
+| **[R-NET18](https://github.com/dwindlehop-pixel/hyades-4x/issues/248)** | Ratify `m_ingress` (spectator links per seat) and spectator gossip degree `d` | R-NET2 |
 
 ---
 

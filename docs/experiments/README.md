@@ -153,5 +153,5 @@ an identifier to its file.
 - `docs/Hyades_industry.md` §6.8–6.26 — the industry branch's own experiment
   record, which has **not** been moved here yet and is the largest remaining
   instance of the problem this record solves
-- `docs/hyades_todo.md` — the open register; an appendix entry is evidence, a
-  todo entry is work
+- `docs/hyades_todo.md` — the overview of the open register, which lives in
+  GitHub issues; an appendix entry is evidence, a to-do issue is work

@@ -207,14 +207,14 @@ omniscient over realized state (R-AC1) because the player is planning; the
 **autopilot** acts on what its instruments justify, and what they justify widens
 over the course of a game.
 
-**R-SIM4 (new, open):** departure-traffic confidence. Needs per-player
+**[R-SIM4](https://github.com/dwindlehop-pixel/hyades-4x/issues/147) (new, open):** departure-traffic confidence. Needs per-player
 accumulated observations of ship departures, light-lagged, with a confidence
 that rises on repeat sightings and presumably decays — plus a decision about
 where that state lives, since a per-player × per-planet observation table is the
 kind of storage §2b warns about. The pop-Band-IV threshold is deliberately the cheap
 half of R-SIM3, taken first because it is exact and needs no new state.
 
-**R-SIM2 (new, open):** the survey scan is still O(planets) per arrival. Position
+**[R-SIM2](https://github.com/dwindlehop-pixel/hyades-4x/issues/146) (new, open):** the survey scan is still O(planets) per arrival. Position
 is static, so a spatial index over planet points with a per-player visited mask
 would make nearest-unvisited O(log n) — but `choose_survey_target` is policy, and
 the engine cannot accelerate a query it does not define. Resolving this means

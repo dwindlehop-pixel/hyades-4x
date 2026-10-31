@@ -231,9 +231,12 @@ cell marked DRAFT until the author approves it.
   each open one with what would settle it.
 - `docs/experiments/` (its `AGENTS.md` says where) gets every run, refuted hypothesis and
   scratch arm, linked from the decision it supports.
-- `docs/hyades_todo.md` gets the T-code's state: closed, advanced or opened.
+- The card's to-do issue gets its state: closed by the PR (`Closes #nn`), or a
+  comment saying what advanced; new work and new R-codes become new issues
+  (`docs/hyades_todo.md`, `docs/hyades_decisions.md`), marked *blocked by*
+  whatever they wait on.
 - `AGENTS.md` gets a lesson only if one was learned that changes how to work.
-- The PR body lists T-codes closed, advanced and opened, and every ratified
+- The PR body lists the issues (and their T-codes) closed, advanced and opened, and every ratified
   decision **satisfied or contradicted** — a contradiction argued is a
   ratification; one unannounced is a defect.
 

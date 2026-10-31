@@ -265,9 +265,10 @@ replicated, and every test target timed beside the old binary.
 - **The spec** carries the decision and its open questions only (`AGENTS.md`
   §6); unpriced outputs that fell become an open question with what would
   settle it (§D.55's apex → galaxy §4.5).
-- **`docs/hyades_todo.md`**: the T-code's state. **`AGENTS.md`**: a lesson only
+- **The to-do issue**: closed by the PR or advanced with a comment; new
+  work is a new issue (`docs/hyades_todo.md`). **`AGENTS.md`**: a lesson only
   if it changes how to work.
-- **The PR body** lists T-codes closed, advanced and opened, and every ratified
+- **The PR body** lists the issues (and their T-codes) closed, advanced and opened, and every ratified
   decision satisfied or contradicted.
 
 ---
