@@ -1567,9 +1567,9 @@ cargo check --lib --target wasm32-unknown-unknown   # holds the §1 portability 
 ```
 
 `RUSTFLAGS: -D warnings` is set workflow-wide, so a bare rustc warning is a
-build failure too. The workspace has four crates — the engine,
-`hyades-viewer`, `hyades-net` and `hyades-sim` — so run fmt, clippy and the
-tests with `--workspace`; CI does. `net/src/web.rs` compiles only for wasm32, so CI also
+build failure too. The workspace has five crates — the engine,
+`hyades-viewer`, `hyades-net`, `hyades-sim` and `hyades-parity` — so run fmt,
+clippy and the tests with `--workspace`; CI does. `net/src/web.rs` compiles only for wasm32, so CI also
 runs `cargo clippy -p hyades-net --target wasm32-unknown-unknown -- -D warnings`.
 The `viewer` job builds the site with `web/build.sh` and runs
 `web/test/smoke.mjs`, `web/test/browser.mjs` (headless Chrome, WebGL2) and
@@ -1609,6 +1609,7 @@ around 40 minutes locally and longer on a runner. Run it by hand when tuning.
 | `viewer/` | **`hyades-viewer`**, a second workspace crate: playback, the log filter, the tactical and juicy renderers, compiled to wasm32. It does not link the engine (design law #15); a dev-dependency for the contract test is its only tie |
 | `net/` | **`hyades-net`**, the third workspace crate: the sessions spec's transport (rooms, rounds, Nostr relays, §4.3.2's rate-limit handling) as a state machine with no I/O, plus a `wasm-bindgen` layer for the browser. Links upstream packages (interface ruling 14), not the engine. `net/tests/sim.rs` plays matches through simulated relays on a simulated clock |
 | `sim/` | **`hyades-sim`**, the fourth workspace crate: the engine as a browser module (T-180, the first half of T-165), a plain C interface that runs a demo from its recipe live, a head and then chunks the viewer appends while it plays (T-183). Links the engine; the viewer still does not |
+| `tools/parity/` | **`hyades-parity`**, the fifth workspace crate: one digest per case (the galaxy at every fair seat count, a 3-seat 500-yr run, two seeded fights), built natively (`parity_native`) and for wasm32, compared by `compare.mjs` under node in CI's balance job (T-128) |
 | `web/` | the game client (its menu, New game, replay viewer and palette screens), the WebGL2 renderer, `build.sh` for the site, and the module and browser tests. Deployed to Pages from `main`; the build needs the `wasm-bindgen` CLI at `net/Cargo.toml`'s exact pin (`web/install-wasm-bindgen.sh`) |
 
 ### The combat/arena split (load-bearing)
@@ -1731,8 +1732,9 @@ cheap audit of the first**, and neither defect was findable by reading.
   (`clippy.toml` enforces it). Two habits:
 
   - **A claim about two targets needs a run on two targets.** The check was
-    one scratch crate and one node script (appendix §D.6, T-128); the claim
-    had stood for the whole project on reasoning alone.
+    one scratch crate and one node script (appendix §D.6); the claim had
+    stood for the whole project on reasoning alone. Since T-128 it is
+    `tools/parity`, run in CI's balance job.
   - **A deny with nothing configured is not a guard.** `src/lib.rs` has denied
     `clippy::disallowed_methods` since early on, and there was no
     `clippy.toml`, so it denied nothing. When a lint names a list, check the
