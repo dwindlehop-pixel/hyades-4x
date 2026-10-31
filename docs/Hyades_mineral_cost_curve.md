@@ -1425,11 +1425,11 @@ velocity/N sweep ranges — informed by, but not fixed by, this spec.
 
 ## R-code roundup
 
-- **R-MC1:** where each card/node sits on the mineral ratio continuum
+- **[R-MC1](https://github.com/dwindlehop-pixel/hyades-4x/issues/230):** where each card/node sits on the mineral ratio continuum
   (4:2:1 peak → 5:4:3 floor) — a per-card tuning call.
-- **R-MC2:** how much variance "Strange Matter ratio close to 4:2:1 always"
+- **[R-MC2](https://github.com/dwindlehop-pixel/hyades-4x/issues/231):** how much variance "Strange Matter ratio close to 4:2:1 always"
   actually permits.
-- **R-MC3a (candidate on the table, §2.3):** pin actual per-class semi-axis
+- **[R-MC3a](https://github.com/dwindlehop-pixel/hyades-4x/issues/232) (candidate on the table, §2.3):** pin actual per-class semi-axis
   ratios (§2.1's example values are illustrative). The `η(role, size)` table
   in §2.2 is ratified and §2.3 now derives an `r_eq` ladder from it —
   Systems `1 : 2.10 : 9.16`, and `4.60 / 3.36 / 2.58` across
@@ -1445,14 +1445,14 @@ velocity/N sweep ranges — informed by, but not fixed by, this spec.
   falls out of the geometry rather than being a special case. §2.3 gives a
   concrete General:Medium ratio (≈6.3:1) under one candidate lane; §2.5
   shows this ratio degrades further, not better, as a fleet fragments.
-- **R-MC6:** size the Kinetic/Potential/Latent group-level super premium,
+- **[R-MC6](https://github.com/dwindlehop-pixel/hyades-4x/issues/233):** size the Kinetic/Potential/Latent group-level super premium,
   and decide whether Growth/Politics's doubled penalty needs a cap.
-- **R-MC7:** confirm Lanchester's square law (vs. linear, vs. another
+- **[R-MC7](https://github.com/dwindlehop-pixel/hyades-4x/issues/234):** confirm Lanchester's square law (vs. linear, vs. another
   attrition model) as the mechanism converting a per-unit exotic-tier
   effectiveness multiplier into a fleet-mass equivalence. Directly relevant
   to §2.5/§6 too — it's the same law proposed there as the counterweight
   to the consolidation penalty.
-- **R-MC8:** once R-MC7 is settled and a combat model exists, specify what
+- **[R-MC8](https://github.com/dwindlehop-pixel/hyades-4x/issues/235):** once R-MC7 is settled and a combat model exists, specify what
   stat(s) "effectiveness" reads off.
 - **R-MC9: resolved in §2.3, and it picked neither lane.** The size ladder
   is no longer chosen between "balance-preserving" and "fiction-faithful" —
@@ -1467,7 +1467,7 @@ velocity/N sweep ranges — informed by, but not fixed by, this spec.
   deleted, not re-laddered, and there is no `V_reference` left to pin. Closes
   `Hyades_loadout.md`'s **R-L5** as predicted, with the opposite answer. See §2's
   amendment block.
-- **R-MC11:** formalize hull shape (`κ`/`λ`) as a function of loadout slot
+- **[R-MC11](https://github.com/dwindlehop-pixel/hyades-4x/issues/236):** formalize hull shape (`κ`/`λ`) as a function of loadout slot
   composition rather than a fixed per-`HullType` constant.
 - **R-MC12: resolved in §2.3 — cost is a function of size alone.** Role
   changes what the money buys, through `η(role, size)`, the role's shell
@@ -1477,7 +1477,7 @@ velocity/N sweep ranges — informed by, but not fixed by, this spec.
   Contact/Offensive slot tables exist (R-L0).
 - **R-MC13:** build the Ship Testing Arena as a `montecarlo.rs` sibling —
   same harness pattern, two placed fleets instead of a generated galaxy.
-- **R-MC14:** the actual distance/velocity/`N` sweep ranges for §6.3.
+- **[R-MC14](https://github.com/dwindlehop-pixel/hyades-4x/issues/237):** the actual distance/velocity/`N` sweep ranges for §6.3.
 - **R-MC15 (open, new):** decide the Band-ladder step factors `F₁`
   (`Band I → II`) and `F₂` (`Band II → III`), each in `[4, 8]` (§2.6), and
   re-derive `medium_fleet_size`/`limited_fleet_size` from them via the

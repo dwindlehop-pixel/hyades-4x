@@ -663,20 +663,20 @@ count, not a fraction — and the guard is kept rather than deleted.
 
 | Code | Question | What would settle it |
 |---|---|---|
-| R-AC4 | scan dwell time and close-scan range | a decision |
-| R-AC5 | the rank formula's *shape* and class thresholds | terms, not a sweep — §A.5 |
-| R-AC6 | provisional remote ranks before a close scan | a decision |
-| R-AC7 | colonizer cost / build time / founding infra as independent magnitudes | MC, once they stop being derived |
-| R-AC8 | contested-claim resolution | a decision; blocked with T-34 |
-| R-AC9 | "nearest center" under light-lag | a decision; design law #15 |
-| R-AC10 | mining and freighter rates | MC |
-| R-AC12 | multi-target output split across filled berths | a design pass |
-| R-AC13 | "if pressed" at the colonization layer | `Hyades_warfare_tree.md` |
-| R-AC14 | the three drive constants of §8.4 | the arena |
-| R-AC15 | lock enough to author depth-1 beats | §§2–6 stable |
-| R-AC18 | should the Colony class carry a `K` floor at all | joint sweep with T-20's ceiling curve |
-| R-AC20 | `center_mining_fraction`'s sign | a ten-seed bed |
-| R-SIM4 | departure traffic as an inferential signal | a formulation |
+| [R-AC4](https://github.com/dwindlehop-pixel/hyades-4x/issues/133) | scan dwell time and close-scan range | a decision |
+| [R-AC5](https://github.com/dwindlehop-pixel/hyades-4x/issues/134) | the rank formula's *shape* and class thresholds | terms, not a sweep — §A.5 |
+| [R-AC6](https://github.com/dwindlehop-pixel/hyades-4x/issues/135) | provisional remote ranks before a close scan | a decision |
+| [R-AC7](https://github.com/dwindlehop-pixel/hyades-4x/issues/136) | colonizer cost / build time / founding infra as independent magnitudes | MC, once they stop being derived |
+| [R-AC8](https://github.com/dwindlehop-pixel/hyades-4x/issues/137) | contested-claim resolution | a decision; blocked with T-34 |
+| [R-AC9](https://github.com/dwindlehop-pixel/hyades-4x/issues/138) | "nearest center" under light-lag | a decision; design law #15 |
+| [R-AC10](https://github.com/dwindlehop-pixel/hyades-4x/issues/139) | mining and freighter rates | MC |
+| [R-AC12](https://github.com/dwindlehop-pixel/hyades-4x/issues/140) | multi-target output split across filled berths | a design pass |
+| [R-AC13](https://github.com/dwindlehop-pixel/hyades-4x/issues/141) | "if pressed" at the colonization layer | `Hyades_warfare_tree.md` |
+| [R-AC14](https://github.com/dwindlehop-pixel/hyades-4x/issues/142) | the three drive constants of §8.4 | the arena |
+| [R-AC15](https://github.com/dwindlehop-pixel/hyades-4x/issues/143) | lock enough to author depth-1 beats | §§2–6 stable |
+| [R-AC18](https://github.com/dwindlehop-pixel/hyades-4x/issues/144) | should the Colony class carry a `K` floor at all | joint sweep with T-20's ceiling curve |
+| [R-AC20](https://github.com/dwindlehop-pixel/hyades-4x/issues/145) | `center_mining_fraction`'s sign | a ten-seed bed |
+| [R-SIM4](https://github.com/dwindlehop-pixel/hyades-4x/issues/147) | departure traffic as an inferential signal | a formulation |
 | T-51 | the expansion loop's integer gates | a discrete sweep |
 | T-92 | 85% of bank inflow is a center mining its own planet | a census, then a mechanism |
 | — | λ is +0.002 on Expansion and −0.348 on Growth | the composite objective |

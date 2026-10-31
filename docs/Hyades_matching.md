@@ -224,11 +224,11 @@ machinery is the discipline: deterministic order, id tiebreaks.
 
 ## 7. Ratification points
 
-**R-MX1** does pressure ever surface diegetically (feeds todo **T-29**) ·
-**R-MX2** market-tick cadence + per-fill light-lag ·
-**R-MX3** distance-discounted price (λ doctrine knob) vs. pure
-price-then-distance · **R-MX4** mining bid concurrency qty ·
-**R-MX5** one Book per (empire, commodity) now; merge into per-commodity
+**[R-MX1](https://github.com/dwindlehop-pixel/hyades-4x/issues/219)** does pressure ever surface diegetically (feeds todo **T-29**) ·
+**[R-MX2](https://github.com/dwindlehop-pixel/hyades-4x/issues/220)** market-tick cadence + per-fill light-lag ·
+**[R-MX3](https://github.com/dwindlehop-pixel/hyades-4x/issues/221)** distance-discounted price (λ doctrine knob) vs. pure
+price-then-distance · **[R-MX4](https://github.com/dwindlehop-pixel/hyades-4x/issues/222)** mining bid concurrency qty ·
+**[R-MX5](https://github.com/dwindlehop-pixel/hyades-4x/issues/223)** one Book per (empire, commodity) now; merge into per-commodity
 *global* books when cross-empire bidding lands (the pirate's tribute demand
 is then just a hostile bid whose distance term enforces todo **T-29**'s
 co-location rule) · **R-MX6** confirm `most_needed_center` is kept
@@ -426,7 +426,7 @@ ratified on the author's direction, not on the number. Over 1,000 yr on seeds
 1 and 7, miners make 2,723 and 1,460 runs and colony ships 1,511 and 1,341.
 Appendix §D.21.
 
-**9.5 `OPEN` — R-MX9: a Mahan main fleet's quick intercept.** The author's
+**9.5 `OPEN` — [R-MX9](https://github.com/dwindlehop-pixel/hyades-4x/issues/224): a Mahan main fleet's quick intercept.** The author's
 rule: a main fleet runs a quick intercept **only if** doing so does not change
 its empire's belief about how pitched battles go or what the current Doctrine
 achieves. The engine has no main-fleet role, no stored belief about battle
@@ -436,7 +436,7 @@ stored fleet, `Hyades_warfare_tree.md` R-WAR32), a per-empire estimate of
 pitched-battle success that a detachment would move, then the rule as a
 `Standing` question beside `joins_battle`.
 
-**9.6 `OPEN` — R-MX10: the room this leaves for cards.** The author: most of
+**9.6 `OPEN` — [R-MX10](https://github.com/dwindlehop-pixel/hyades-4x/issues/225): the room this leaves for cards.** The author: most of
 this Exchange cannot be implemented yet, and the design should leave room for
 new cards, Designs and Doctrine to widen what it means. The places a card can
 write today, each read through one `Standing` question:
@@ -497,7 +497,7 @@ today, and what would settle it. **All four are `OPEN`**, each with a
 recommendation, and the thesis that governs them is politics §0: *the
 simulation-state effects of collusion are sold to a single player acting alone.*
 
-**10.1 `OPEN` — R-MX11: monopoly.** A super's precursors are rich in one
+**10.1 `OPEN` — [R-MX11](https://github.com/dwindlehop-pixel/hyades-4x/issues/226): monopoly.** A super's precursors are rich in one
 archetype, so at three seats each super has one native forge — a monopoly by
 geography. Today a monopolist cannot use it: a forge asks zero for what it
 forged outside a balanced set (§8.7), and every forge makes every super from
@@ -510,7 +510,7 @@ monopolist's freight. **What would settle it:** a measured price gradient
 between native and non-native forges on a bed where a tier-3 bill creates
 demand, then the two writes measured against it.
 
-**10.2 `OPEN` — R-MX12: monopsony.** The single buyer is the Politics tree's
+**10.2 `OPEN` — [R-MX12](https://github.com/dwindlehop-pixel/hyades-4x/issues/227): monopsony.** The single buyer is the Politics tree's
 **Corner** (politics §4.2, tier 3): bid across a whole material class rather
 than a lot. Under least-price clearing a lone buyer already pays the marginal
 seller's reservation, so what a Corner adds is **volume and exclusion** — buying
@@ -520,7 +520,7 @@ the center's shortfall to the empire's purse, and that its purchases be
 ordinary contracts (they traverse space and can be interdicted). **What would
 settle it:** the Corner card through the card workflow.
 
-**10.3 `OPEN` — R-MX13: cartel.** A cartel is two sellers agreeing to restrict
+**10.3 `OPEN` — [R-MX13](https://github.com/dwindlehop-pixel/hyades-4x/issues/228): cartel.** A cartel is two sellers agreeing to restrict
 supply, and §0 forbids the agreement having a channel: there is no consent path
 anywhere in the card layer (politics §6.5). What a cartel *buys* — a higher
 price for one material — is available unilaterally as §10.1's withhold by a
@@ -612,7 +612,7 @@ tail).
   the hull flies to the nearest center to rearm and back. A hauler or a hull
   wrecked on the way is the supply line cut. Test:
   `a_dry_missile_picket_is_resupplied_by_ammo_run_or_by_return`.
-- **`OPEN` — R-MX15: the ordnance book's key and price.** The deep-tier
+- **`OPEN` — [R-MX15](https://github.com/dwindlehop-pixel/hyades-4x/issues/229): the ordnance book's key and price.** The deep-tier
   Politics card is not built. Whether rounds should price above their basics,
   by the urgency of the hulls waiting on them, is open. **What would settle
   it:** the Politics card, then a census of ordnance bids against the

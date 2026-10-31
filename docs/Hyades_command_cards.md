@@ -184,12 +184,12 @@ Absent by design: Concentrate Fire, Encircle, Run Them Down, Picket — those ar
 
 ## 11. Open decisions to ratify
 
-- **R-1 · Tree table** (§6) — blends + win-**objectives** ratified; **objects** are placeholders (the Growth object is now a cumulative *Bloom*, distinct from Production's concentration). Redirect object flavor if desired.
-- **R-2 · The action economy & branching** (§4–5) — *resolved:* **splash and unlock are one act** — reaching a node costs **base + 1** and unlocks it (no reversible probe; zero distinction, to fuel the yomi engine); the +1 is **per node, not per card**; the clock is **intrinsic to the cost** (~one new node/round); **depth (4–10) and branching are per-tree balance knobs** shaped by the tree's branching class (front-loaded/back-loaded); a deep proactive-flavored node is allowed but **trades value for tempo**; the win-object carries the tree's stated Identity (§0 rev 9). **Still open:** the **combo-strength target** (single-tree play must be losing) and the **actual per-tree depth/branch numbers** — playtest outputs (R-5).
-- **R-3 · How far folded into doctrine** (§7) — Settle/Pioneer/Develop/Prospect → standing doctrine; defense as a board-object (Citadel). Confirm the abstraction, and ship-class **naming**.
-- **R-4 · Where backbone + production live** (§2–3) — migrate these how-it-works premises into the sim model?
-- **R-5 · The full clock math** — three actions, one unlock/round, depth 4–10, ≈3 cards/node, and win-object build times must net out to a **first elimination ~10–20 min** and a **full game 30–45**. The first thing the sims (sim §5) should pin.
-- **R-6 · Sim-model line** — the peaceful-default + consequential-act-not-routing rule wants one line in sim §0a/§3.
+- **[R-1](https://github.com/dwindlehop-pixel/hyades-4x/issues/155) · Tree table** (§6) — blends + win-**objectives** ratified; **objects** are placeholders (the Growth object is now a cumulative *Bloom*, distinct from Production's concentration). Redirect object flavor if desired.
+- **[R-2](https://github.com/dwindlehop-pixel/hyades-4x/issues/156) · The action economy & branching** (§4–5) — *resolved:* **splash and unlock are one act** — reaching a node costs **base + 1** and unlocks it (no reversible probe; zero distinction, to fuel the yomi engine); the +1 is **per node, not per card**; the clock is **intrinsic to the cost** (~one new node/round); **depth (4–10) and branching are per-tree balance knobs** shaped by the tree's branching class (front-loaded/back-loaded); a deep proactive-flavored node is allowed but **trades value for tempo**; the win-object carries the tree's stated Identity (§0 rev 9). **Still open:** the **combo-strength target** (single-tree play must be losing) and the **actual per-tree depth/branch numbers** — playtest outputs (R-5).
+- **[R-3](https://github.com/dwindlehop-pixel/hyades-4x/issues/157) · How far folded into doctrine** (§7) — Settle/Pioneer/Develop/Prospect → standing doctrine; defense as a board-object (Citadel). Confirm the abstraction, and ship-class **naming**.
+- **[R-4](https://github.com/dwindlehop-pixel/hyades-4x/issues/158) · Where backbone + production live** (§2–3) — migrate these how-it-works premises into the sim model?
+- **[R-5](https://github.com/dwindlehop-pixel/hyades-4x/issues/159) · The full clock math** — three actions, one unlock/round, depth 4–10, ≈3 cards/node, and win-object build times must net out to a **first elimination ~10–20 min** and a **full game 30–45**. The first thing the sims (sim §5) should pin.
+- **[R-6](https://github.com/dwindlehop-pixel/hyades-4x/issues/160) · Sim-model line** — the peaceful-default + consequential-act-not-routing rule wants one line in sim §0a/§3.
 
 ---
 

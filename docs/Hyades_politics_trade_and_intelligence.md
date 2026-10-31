@@ -792,13 +792,13 @@ bed before anything switches on.**
 
 | Code | Question | Blocked on |
 |---|---|---|
-| R-P2 (rest) | base income rate, Politics depth multiplier; and λ on a ten-seed bed | MC |
-| R-P5 | the event taxonomy admitting solicitation, and `window_years` | the round layer |
-| R-P7 | the per-tree counter list with costs — the tree's whole balance surface | MC, R-P2 |
-| R-P9 | strength of both counter-graph effects; is the risk premium bounded? | MC |
-| R-P13 | which stances may be written, by which tier, on which index | a design pass |
-| R-P14 | does an imposed stance decay? | MC |
-| R-P15 | does a two-referent `Target` widen `target_ref` past R-NET4? | R-NET4, R-C1 |
+| [R-P2](https://github.com/dwindlehop-pixel/hyades-4x/issues/249) (rest) | base income rate, Politics depth multiplier; and λ on a ten-seed bed | MC |
+| [R-P5](https://github.com/dwindlehop-pixel/hyades-4x/issues/250) | the event taxonomy admitting solicitation, and `window_years` | the round layer |
+| [R-P7](https://github.com/dwindlehop-pixel/hyades-4x/issues/251) | the per-tree counter list with costs — the tree's whole balance surface | MC, R-P2 |
+| [R-P9](https://github.com/dwindlehop-pixel/hyades-4x/issues/252) | strength of both counter-graph effects; is the risk premium bounded? | MC |
+| [R-P13](https://github.com/dwindlehop-pixel/hyades-4x/issues/253) | which stances may be written, by which tier, on which index | a design pass |
+| [R-P14](https://github.com/dwindlehop-pixel/hyades-4x/issues/254) | does an imposed stance decay? | MC |
+| [R-P15](https://github.com/dwindlehop-pixel/hyades-4x/issues/255) | does a two-referent `Target` widen `target_ref` past R-NET4? | R-NET4, R-C1 |
 | — | reputation decay rate on both models | MC |
 | — | λ is +0.002 on Expansion and −0.348 on Growth | the composite objective |
 | T-86 | default, interdiction, reputation (stage 6) | — |

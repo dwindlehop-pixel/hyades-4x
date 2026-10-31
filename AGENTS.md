@@ -75,6 +75,17 @@ specified at T-131, a static per-role Elo rating of every Design, with a first
 table in `data/design_ratings.tsv` that nothing reads yet; Warfare is blocked on T-30's missing accept/decline site — so read their
 registers before assuming a question is unasked.
 
+**Outstanding work and open decisions are tracked in GitHub issues, not in
+markdown.** `docs/` gives the overview and GitHub holds the detail. Read
+`docs/hyades_todo.md` for the readiness bands and the `T-nn` → issue index, and
+`docs/hyades_decisions.md` for every open R-code by spec, then open the issue for
+the history, the measurements, what it is blocked by and the discussion. Each
+spec's register still lists its open decisions, one line each, and each code
+links its issue. Dependencies between issues are GitHub issue dependencies
+(*blocked by* / *blocking*); a relationship that is not a block is a mention of
+one issue in the other. `docs/hyades_done.md` is the ledger of landings before
+the move, frozen; a landing after it is its PR and the issues the PR closed.
+
 **`docs/experiments/` is where the measurement record lives.** Nothing in it is
 normative. It holds the runs, the refuted hypotheses and the superseded design
 that used to be inlined in the specs, each linked from the decision it supports,
@@ -2079,7 +2090,8 @@ one, stop and flag it.
   - Changed mechanics ⇒ update the spec section that describes them.
   - New tunable ⇒ document it where its siblings are documented, and say whether
     the value is confirmed or a placeholder.
-  - Resolved R-code ⇒ mark it resolved where it is listed, with the resolution.
+  - Resolved R-code ⇒ mark it resolved where it is listed, with the resolution,
+    and close its decision issue with a comment that states the ruling.
   - A measurement that contradicts a spec claim ⇒ correct the claim and cite the
     run, rather than leaving the doc to be believed and the code to be true.
 
@@ -2133,8 +2145,9 @@ one, stop and flag it.
 - **Every PR accounts for its T-codes and for every ratified decision it touches.**
   Two lists in the body, and the second is the one that matters:
 
-  1. **Tasks.** Which `T-nn` this **closed**, which it **advanced** without
-     closing, and which it **opened**. A staged plan (`Hyades_industry.md` §6.7,
+  1. **Tasks.** Which to-do issues this **closed** (`Closes #nn`), which it
+     **advanced** without closing, and which it **opened**; name the `T-nn` too
+     where the issue has one. A staged plan (`Hyades_industry.md` §6.7,
      politics §10.7) is only navigable if each landing says where in it you now
      are — and a T-code claimed as done that is only half done is worse than an
      open one, because nobody re-reads it.
@@ -2179,7 +2192,11 @@ one, stop and flag it.
   T-147's freight routing in `$` (appendix §D.53–§D.56) written as a method:
   behavior is explained before throughput is traded for it.
 - **Make concrete decisions; flag open questions as R-codes.** A decision plus a
-  flagged R-code beats an open-ended clarifying question. Existing families:
+  flagged R-code beats an open-ended clarifying question. A new R-code is a new
+  issue labeled `decision: needs ratification` and `spec: <name>`, titled
+  `R-XX: <question>`, with what would settle it; the spec's register gets one
+  line linking it, and `docs/hyades_decisions.md` gets its row. If it waits on
+  another issue, mark it *blocked by* that issue. Existing families:
   `R-MC*` (mineral cost / combat), `R-L*` (loadout), `R-ARENA*`, `R-MX*` (matching),
   `R-CG*` (counter-graph), `R-XM*` (exotic matter), `R-UI*` (the interface).
 - **Never silently change globally Monte-Carlo-tuned parameters.** They require
@@ -2398,7 +2415,7 @@ The uploaded bundle was internally inconsistent across branches; these were
 balance rests on.** If the prior definitions exist in git history, restore them
 and re-certify before building on top.
 
-### Next: R-MC9c (the active workstream) — `hyades_todo.md` T-12
+### Next: R-MC9c (the active workstream) — T-12, [#73](https://github.com/dwindlehop-pixel/hyades-4x/issues/73)
 
 Layer onto `combat::resolve_engagement`, all as `CombatConfig` fields + slot-derived stats:
 
@@ -2423,8 +2440,8 @@ i.e. supremacy is slot-organic by construction.
 
 `docs/Hyades_standing_layer_and_observation.md` §11 lists 15 engine work items.
 Status, so this is not re-derived each time. **Six have landed** (1, 2, 5, 8, 9,
-11+12); the eight still open are carried in `docs/hyades_todo.md` under their
-T-codes, and item 10 is blocked rather than open:
+11+12); the eight still open are GitHub issues under their
+T-codes (index in `docs/hyades_todo.md`), and item 10 is blocked rather than open:
 
 | # | Item | R-code | Status |
 |---|---|---|---|
@@ -2483,12 +2500,13 @@ mass ladder — ordinal content kept, magnitudes now geometry) and R-O65
 (`hull_thrust_to_mass` still varies 1.2/1.1/1.0 across Systems sizes, which the
 shell model says should be flat; not flattened, it is MC-tuned).
 
-### Also open — see `docs/hyades_todo.md`
+### Also open — see the GitHub issues
 
-**The full register of outstanding work lives in `docs/hyades_todo.md`**, ordered
-specific → vague with permanent `T-nn` identifiers, and **what was built lives in
-`docs/hyades_done.md`** — a Band A entry moves there, unchanged, when it closes. Do not maintain a second copy
-of it here; cite the T-code. What stays in this file is only the material that
+**The full register of outstanding work is the GitHub issues labeled `todo`**,
+with a readiness band label each; `docs/hyades_todo.md` is the overview and maps
+every permanent `T-nn` to its issue. **What was built before the move lives in
+`docs/hyades_done.md`**, frozen; since then a closed issue and the PR that closed
+it are the record. Do not maintain a second copy of it here; cite the issue. What stays in this file is only the material that
 changes how you *work*, not what is left to do:
 
 - **Throughput floor: 2.5 simulated-years/real-second** (T-24). `galaxy.rs` cites
