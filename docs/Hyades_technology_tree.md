@@ -540,7 +540,8 @@ sides swapped (R-TECH16); and the long-range bed still needs fleets that close
 `examples/design_rating all`, equal spend `B` = ten General Systems hulls
 (13.15 kt), eight seeds, both seatings, 240 matches a role, every leg at its
 Design's own drive. The table is `data/design_ratings.tsv`, stamped with the
-engine commit (R-TECH15); the raw matches are `data/design_rating_matches.tsv`.
+engine commit `52fc4f2` — from before releases; a regeneration is stamped with a
+release (R-TECH15, §4.10); the raw matches are `data/design_rating_matches.tsv`.
 **Measured**, `γ` with the role's anchor at 1 (R-TECH8):
 
 | role (anchor) | order, `γ` |
@@ -572,13 +573,21 @@ scout bed (one cost tier, one mass — warfare §8.9.7; they differ only in driv
 0.911 g against 1.00). That is R-O64/R-L0, and the author's long-term goal that
 no two named Designs share a loadout (§4.3.1).
 
-### 4.10 `OPEN` — R-TECH15: where the table lives and how it goes stale
+### 4.10 `RATIFIED` — R-TECH15: where the table lives and how it goes stale
 
-*Recommend:* an offline harness writes the table to `data/`, stamped with the
-digest of every configuration value the beds read; the harnesses that compute
-`T_i` read it and refuse a table whose stamp does not match the running
-configuration. The engine does not read it: capability is a measurement, and no
-autopilot decision may consult it.
+The author's ruling ([#312](https://github.com/dwindlehop-pixel/hyades-4x/issues/312)):
+the capability calculation is too costly to redo on every commit, so **staleness
+is recorded as a release number.** Releases are git tags `vMMM.mmm.bbb`
+(`Hyades_releases.md`). An offline harness writes the table to
+`data/design_ratings.tsv`, stamped with the release it was measured at; a
+harness that computes `T_i` reads the stamp and refuses a table whose major or
+minor differs from the current release, or that carries no release stamp
+(`Hyades_releases.md` §2). The engine does not read it: capability is a
+measurement, and no autopilot decision may consult it.
+
+**State:** the table on `main` is stamped with commit `52fc4f2`, which predates
+the first release, so a reader refuses it until it is regenerated; no reader
+exists yet (T-131).
 
 **Cost:** the six-Design pool over all seven beds, both seatings, is 1,680
 matches for eight seeds and **7.5 min** on one core (appendix §D.18); the
@@ -691,7 +700,7 @@ the measurement into the target (§4.10).
 | [R-TECH11](https://github.com/dwindlehop-pixel/hyades-4x/issues/310) | equal-spend budget `B` = ten General hulls — *recommended* | author |
 | [R-TECH12](https://github.com/dwindlehop-pixel/hyades-4x/issues/311) | `D_long`, and a closing long-range bed | a ranged family or beam falloff, then a sweep |
 | ~~R-TECH14~~ | ~~combat beds tie every armed Design~~ — **resolved by T-132**, warfare §8.18 | — |
-| [R-TECH15](https://github.com/dwindlehop-pixel/hyades-4x/issues/312) | the table's storage and staleness stamp — `data/design_ratings.tsv`, stamped with the engine commit; no harness reads it back yet | a reader that refuses a stale stamp |
+| ~~R-TECH15~~ | ~~the table's storage and staleness stamp~~ — **ratified (#312)**: stamped with the release, `Hyades_releases.md`; §4.10 | — |
 | [R-TECH18](https://github.com/dwindlehop-pixel/hyades-4x/issues/313) | **an unlock reaches no build** — no Design resolver reads the roster. **Advanced (T-139):** the missile card reaches builds through its Doctrine write, which `Standing::design_for(Sentry)` reads; an unlock alone still reaches none (§9.5) | a resolver; T-25 |
 | [R-TECH19](https://github.com/dwindlehop-pixel/hyades-4x/issues/314) | the offensive beds' judge read as dry mass **holding the field** (neither wrecked nor withdrawn), horizon 1 yr — *recommended* | author |
 | [R-TECH3](https://github.com/dwindlehop-pixel/hyades-4x/issues/315) | the card surface beyond `UnlockDesign` | blocked on R-L0 and R-O65 |

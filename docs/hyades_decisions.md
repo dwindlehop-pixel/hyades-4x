@@ -296,7 +296,6 @@ the issue.
 | R-TECH9 | [#309](https://github.com/dwindlehop-pixel/hyades-4x/issues/309) | Weight hulls by dry mass, not count or volume (recommended) |
 | R-TECH11 | [#310](https://github.com/dwindlehop-pixel/hyades-4x/issues/310) | Equal-spend budget B = ten General hulls (recommended) |
 | R-TECH12 | [#311](https://github.com/dwindlehop-pixel/hyades-4x/issues/311) | D_long, and a closing long-range bed |
-| R-TECH15 | [#312](https://github.com/dwindlehop-pixel/hyades-4x/issues/312) | The rating table's storage and staleness stamp |
 | R-TECH18 | [#313](https://github.com/dwindlehop-pixel/hyades-4x/issues/313) | An unlock reaches no build |
 | R-TECH19 | [#314](https://github.com/dwindlehop-pixel/hyades-4x/issues/314) | The offensive beds' judge: dry mass holding the field |
 | R-TECH3 | [#315](https://github.com/dwindlehop-pixel/hyades-4x/issues/315) | The card surface beyond UnlockDesign |
