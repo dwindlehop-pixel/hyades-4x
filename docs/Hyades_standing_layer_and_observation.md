@@ -362,6 +362,19 @@ the constraint that any solution must also serve combat intercept — by
 construction, not coincidence. The candidate set prunes through the existing
 slab-allocated BSP tree.
 
+> **Engine status (T-05): built, with no consumer yet.**
+> `combat::reachability_cone(tree, from, velocity, a_max, t)` returns every
+> point of a `BspTree` a ship could reach within `t`: a sphere query of radius
+> `min(|v|·t + ½·a_max·t², t)` (`BspTree::within`), then the exact test
+> `combat::earliest_reach_time ≤ t`. That function is `solve_intercept`'s
+> `PositionZero` equation solved for its **first** root; the solver can return
+> a later one on a fly-by (a ship closing at 10 ly/yr on a world 1 ly away,
+> `a = 0.01`: first reach near 0.1 yr, solver ~2,000 yr), so the cone does not
+> call it there. Whether combat intercept should take the first root too is
+> open ([#357](https://github.com/dwindlehop-pixel/hyades-4x/issues/357)).
+> Nothing in the simulation calls the cone: tier-1 movement intelligence
+> (politics §5.1) is its first consumer and is not built.
+
 The cone narrows as the burn resolves, and light-lag guarantees you are
 watching the early, ambiguous phase. A hull bound for a metal-rich
 low-habitability world is mining; for a habitable one, colonizing; for your
@@ -1129,7 +1142,7 @@ is why exotic synthesis is pair production (§9.6).
 | 3 | Add **diplomatic fields** to `Doctrine` — trade lanes, partners, pact state, **and a stance default**, which the first Warfare card writes (*a Neutral empire is an Enemy empire*, `Hyades_warfare_tree.md` §7.2) | R-O27 / R-A3 |
 | 4 | Add a **throttle fraction** to `Doctrine`; derive observed acceleration from trajectory, not the stat block | R-O40 |
 | 5 | Equalise colony cargo mass and mineral cargo mass | R-O32 |
-| 6 | Expose `min_time_search` as a **reachability cone** query (same function, reverse direction); prune candidates via the existing BSP tree | R-O31 |
+| 6 | ~~Expose `min_time_search` as a **reachability cone** query (same function, reverse direction); prune candidates via the existing BSP tree~~ **done (T-05)** — `combat::reachability_cone`, pruned by `BspTree::within`, exact by `combat::earliest_reach_time`; nothing in the engine reads it yet | R-O31 **resolved** |
 | 7 | ~~Route intercept and sim §4 accept/decline through **believed `a_max`**~~ **half done** — `src/belief.rs` has the one-sided estimator and the accept/decline predicate with the surprise-attack property asserted; the sim-level wiring is blocked on the round layer (T-30), and harvesting `a` from trajectories is item 4 | R-O41 |
 | 8 | ~~Rewrite roles §4 eligibility lists as **permissive with competence**~~ **done** — roles §4 now opens with the permissive rule and every per-role list reads "Competent:", with capability-zero (a Limited hull's absent cargo hold) distinguished from a forbidden assignment. `Autopilot::assign_role` matches: it declines on *no viable target*, never on hull type | R-O44 **resolved** |
 | 9 | `Galaxy::FAIR_COUNTS` is `[2, 3, 6, 12]` and rejects 18, while galaxy §2 lists 6r (12, 18) as fair and `starting_hex_radius` already carries an `18 => 4.5` branch | R-O12 |

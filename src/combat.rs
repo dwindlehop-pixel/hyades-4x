@@ -353,6 +353,73 @@ fn solve_position_intercept(r0: Vec3, v0: Vec3, a: f64, tolerance: f64) -> Optio
     Some(InterceptSolution { time: t, direction })
 }
 
+/// **The earliest time an isotropic rocket reaches a point** (T-05, R-O31):
+/// the first `T ≥ 0` with `|r₀ + v₀T| ≤ ½·a·T²`, for the point at `r₀`
+/// relative to the ship and the point's velocity `v₀` relative to the ship
+/// (the negated ship velocity for a world at rest). `None` with no thrust,
+/// unless the point is where the ship is.
+///
+/// It is [`solve_intercept`]'s `PositionZero` equation and differs in one
+/// case, which is why it is a separate function: **a fly-by**. Up to the
+/// coasting closest approach `T_c` the coasting distance falls while `½aT²`
+/// rises, so the residual is strictly decreasing there and has at most one
+/// root; when the residual is already non-positive at `T_c`, that root is the
+/// earliest reach, and it is bisected on `[0, T_c]`. `solve_intercept`
+/// brackets by doubling from `T = 1` and can bisect onto a later sign change:
+/// a ship 1 ly from a world, closing at 10 ly/yr with `a = 0.01`, coasts
+/// through it at `T ≈ 0.1` and the solver reports `T ≈ 2000`. Past `T_c` this
+/// falls back to the solver, which is exact there whenever the residual has
+/// one sign change.
+pub fn earliest_reach_time(r0: Vec3, v0: Vec3, a: f64) -> Option<f64> {
+    if r0.norm() <= 0.0 {
+        return Some(0.0);
+    }
+    let f = |t: f64| r0.add(v0.scale(t)).norm() - 0.5 * a * t * t;
+    let speed2 = v0.dot(v0);
+    let t_c = if speed2 > 0.0 { (-r0.dot(v0) / speed2).max(0.0) } else { 0.0 };
+    if t_c > 0.0 && f(t_c) <= 0.0 {
+        let (mut lo, mut hi) = (0.0, t_c);
+        for _ in 0..100 {
+            let mid = 0.5 * (lo + hi);
+            if f(mid) > 0.0 {
+                lo = mid;
+            } else {
+                hi = mid;
+            }
+        }
+        return Some(0.5 * (lo + hi));
+    }
+    solve_position_intercept(r0, v0, a, 0.0).map(|s| s.time)
+}
+
+/// **The reachability cone** (T-05, R-O31; standing layer §6.3): of the
+/// points in `tree`, every one a ship at `from` with velocity `velocity` and
+/// acceleration at most `a_max` could reach within `t` years, as their paired
+/// indices, ascending. It is [`earliest_reach_time`] evaluated in the reverse
+/// direction — *what can it reach by `t`* instead of *when does it reach
+/// this* — so the uncertainty cone and the intercept are one function.
+///
+/// The tree prunes first. Nothing outside `|velocity|·t + ½·a_max·t²` is
+/// reachable, nor anything a light signal could not reach in `t` (`c = 1`),
+/// so the sphere query takes the smaller of the two radii; the survivors are
+/// tested exactly. `a_max` is a believed bound in a caller that has one
+/// ([`crate::belief::BeliefAMax`]), which makes the cone a lower bound on
+/// the true one — the direction light-lagged belief errs in.
+///
+/// Newtonian, as the intercept solver is (R-ARENA4).
+pub fn reachability_cone(tree: &BspTree, from: Vec3, velocity: Vec3, a_max: f64, t: f64) -> Vec<usize> {
+    if t < 0.0 {
+        return Vec::new();
+    }
+    let radius = (velocity.norm() * t + 0.5 * a_max * t * t).min(t);
+    let to = velocity.scale(-1.0);
+    tree.within_points(from, radius)
+        .into_iter()
+        .filter(|&(at, _)| earliest_reach_time(at.sub(from), to, a_max).is_some_and(|reach| reach <= t))
+        .map(|(_, i)| i)
+        .collect()
+}
+
 /// **Laser hit check** — confirmed this conversation: *"Lasers travel in a
 /// straight line at the speed of light; effective at short distances but
 /// easy to dodge at interstellar distances."* In this engine's own units
@@ -651,6 +718,44 @@ impl BspTree {
             self.nearest_in(root, query, &mut best);
         }
         best
+    }
+
+    /// **Every point within `radius` of `query`** (T-05), as its paired
+    /// index, ascending (stable for duplicate indices) — so a caller iterating the result sees one order
+    /// whatever the tree's shape. The standard k-d range query: a subtree is
+    /// skipped when the query sphere does not cross its splitting plane.
+    pub fn within(&self, query: Vec3, radius: f64) -> Vec<usize> {
+        self.within_points(query, radius).into_iter().map(|(_, i)| i).collect()
+    }
+
+    /// [`Self::within`] with each point's position, ascending by index.
+    pub fn within_points(&self, query: Vec3, radius: f64) -> Vec<(Vec3, usize)> {
+        let mut out = Vec::new();
+        if let Some(root) = self.root {
+            self.within_in(root, query, radius, &mut out);
+        }
+        out.sort_by_key(|&(_, i)| i);
+        out
+    }
+
+    fn within_in(&self, node_idx: usize, query: Vec3, radius: f64, out: &mut Vec<(Vec3, usize)>) {
+        match &self.nodes[node_idx] {
+            BspNodeSlab::Leaf { start, end } => {
+                out.extend(self.points[*start..*end].iter().filter(|(p, _)| p.distance(query) <= radius));
+            }
+            BspNodeSlab::Split { axis, value, left, right } => {
+                // A point on the plane belongs to either side by the build's
+                // sort, so both sides are searched whenever the sphere reaches
+                // the plane, including touching it.
+                let diff = coord(query, *axis) - value;
+                if diff <= radius {
+                    self.within_in(*left, query, radius, out);
+                }
+                if -diff <= radius {
+                    self.within_in(*right, query, radius, out);
+                }
+            }
+        }
     }
 
     fn nearest_in(&self, node_idx: usize, query: Vec3, best: &mut Option<(usize, f64)>) {
@@ -1401,4 +1506,119 @@ pub fn resolve_engagement(
         std::cmp::Ordering::Equal => Winner::Draw,
     };
     EngagementOutcome { winner, laser_survivors, missile_survivors }
+}
+
+#[cfg(test)]
+mod reachability_tests {
+    //! T-05: the range query, the earliest reach and the reachability cone.
+    use super::*;
+    use crate::rng::Rng;
+
+    fn random_points(rng: &mut Rng, n: usize, extent: f64) -> Vec<(Vec3, usize)> {
+        (0..n)
+            .map(|i| (Vec3::new(rng.range(-extent, extent), rng.range(-extent, extent), rng.range(-extent, extent)), i))
+            .collect()
+    }
+
+    /// The range query returns exactly what a linear scan does, in ascending
+    /// index order, for trees of one leaf and of many levels.
+    #[test]
+    fn within_matches_a_linear_scan() {
+        let mut rng = Rng::new(5);
+        for &n in &[0usize, 1, 8, 9, 50, 400] {
+            let points = random_points(&mut rng, n, 10.0);
+            let tree = BspTree::build(&points);
+            for _ in 0..25 {
+                let q = Vec3::new(rng.range(-12.0, 12.0), rng.range(-12.0, 12.0), rng.range(-12.0, 12.0));
+                let r = rng.range(0.0, 8.0);
+                let mut expected: Vec<usize> =
+                    points.iter().filter(|(p, _)| p.distance(q) <= r).map(|&(_, i)| i).collect();
+                expected.sort_unstable();
+                assert_eq!(tree.within(q, r), expected, "n={n}, r={r}");
+            }
+        }
+    }
+
+    /// From rest the earliest reach is `d = ½aT²`, and it agrees with the
+    /// intercept solver wherever the solver's equation has one sign change.
+    #[test]
+    fn earliest_reach_from_rest_is_the_classic_result_and_the_solvers() {
+        let r0 = Vec3::new(10.0, 0.0, 0.0);
+        let t = earliest_reach_time(r0, Vec3::ZERO, 2.0).unwrap();
+        assert!((t - (2.0 * 10.0 / 2.0_f64).sqrt()).abs() < 1e-9, "{t}");
+        let solver = solve_intercept(r0, Vec3::ZERO, 2.0, InterceptCriterion::PositionZero).unwrap().time;
+        assert!((t - solver).abs() < 1e-9, "{t} against {solver}");
+        assert_eq!(earliest_reach_time(Vec3::ZERO, Vec3::new(1.0, 0.0, 0.0), 1.0), Some(0.0));
+        assert_eq!(earliest_reach_time(r0, Vec3::ZERO, 0.0), None);
+    }
+
+    /// **A fly-by is reached when the ship passes, not on a later return.**
+    /// A ship 1 ly from a world, closing at 10 ly/yr with `a = 0.01`, coasts
+    /// through it near `T = 0.1`. The intercept solver reports a later root
+    /// (about 2,000 yr); the earliest reach is the first.
+    #[test]
+    fn a_fly_by_is_reached_at_the_first_crossing() {
+        let (r0, v0, a) = (Vec3::new(1.0, 0.0, 0.0), Vec3::new(-10.0, 0.0, 0.0), 0.01);
+        let t = earliest_reach_time(r0, v0, a).unwrap();
+        assert!(t > 0.099 && t < 0.1, "{t}");
+        let residual = |t: f64| r0.add(v0.scale(t)).norm() - 0.5 * a * t * t;
+        assert!(residual(t).abs() < 1e-9, "the reach satisfies the equation");
+        assert!((0..1000).all(|k| residual(t * k as f64 / 1000.0) > 0.0), "nothing earlier reaches it");
+        let solver = solve_intercept(r0, v0, a, InterceptCriterion::PositionZero).unwrap().time;
+        assert!(solver > 1000.0, "the solver's later root, pinned so a fix to it is seen: {solver}");
+    }
+
+    /// The cone is the linear scan of `earliest_reach_time ≤ t` over every
+    /// point inside the light sphere: the tree's prune drops nothing the
+    /// exact test would keep.
+    #[test]
+    fn the_cone_matches_a_linear_scan() {
+        let mut rng = Rng::new(9);
+        let points = random_points(&mut rng, 600, 20.0);
+        let tree = BspTree::build(&points);
+        let mut kept = 0;
+        for _ in 0..40 {
+            let from = Vec3::new(rng.range(-5.0, 5.0), rng.range(-5.0, 5.0), rng.range(-5.0, 5.0));
+            let v = Vec3::new(rng.range(-0.5, 0.5), rng.range(-0.5, 0.5), rng.range(-0.5, 0.5));
+            let a = rng.range(0.0, 2.0);
+            let t = rng.range(0.0, 15.0);
+            let expected: Vec<usize> = points
+                .iter()
+                .filter(|(p, _)| {
+                    p.distance(from) <= t && earliest_reach_time(p.sub(from), v.scale(-1.0), a).is_some_and(|r| r <= t)
+                })
+                .map(|&(_, i)| i)
+                .collect();
+            let cone = reachability_cone(&tree, from, v, a, t);
+            kept += cone.len();
+            assert_eq!(cone, expected, "from {from:?}, v {v:?}, a {a}, t {t}");
+        }
+        assert!(kept > 0, "the cases must keep something, or the comparison is vacuous");
+    }
+
+    /// The cone only grows with time, and from rest it is the ball of radius
+    /// `min(½at², t)`.
+    #[test]
+    fn the_cone_is_nested_in_time_and_a_ball_from_rest() {
+        let mut rng = Rng::new(11);
+        let points = random_points(&mut rng, 500, 10.0);
+        let tree = BspTree::build(&points);
+        let (from, a) = (Vec3::new(1.0, -2.0, 0.5), 0.3);
+        let mut last: Vec<usize> = Vec::new();
+        for k in 0..=20 {
+            let t = k as f64 * 0.5;
+            let cone = reachability_cone(&tree, from, Vec3::ZERO, a, t);
+            assert!(last.iter().all(|i| cone.contains(i)), "t={t}: a point left the cone");
+            let r = (0.5 * a * t * t).min(t);
+            for &(p, i) in &points {
+                let d = p.distance(from);
+                // Off the boundary, membership is the ball's.
+                if (d - r).abs() > 1e-6 {
+                    assert_eq!(cone.contains(&i), d < r, "t={t}, d={d}, r={r}");
+                }
+            }
+            last = cone;
+        }
+        assert!(!last.is_empty());
+    }
 }

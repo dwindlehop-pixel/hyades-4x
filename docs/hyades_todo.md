@@ -70,7 +70,7 @@ issue covering a staged plan whose stages are tracked inside it.
 | T-147 | [#32](https://github.com/dwindlehop-pixel/hyades-4x/issues/32) | Bring the card-free spread between empires to about 20 colonies |
 | T-146 | [#33](https://github.com/dwindlehop-pixel/hyades-4x/issues/33) | Make the hex presentation-only; give color its own spacing |
 | T-145 | [#34](https://github.com/dwindlehop-pixel/hyades-4x/issues/34) | Raise the yomi of super and apex forging |
-| T-144 | [#35](https://github.com/dwindlehop-pixel/hyades-4x/issues/35) | Decisions without a cadence: a short-circuit tree, conditioned on events |
+| T-144 | [#35](https://github.com/dwindlehop-pixel/hyades-4x/issues/35) | ~~Decisions without a cadence: a short-circuit tree, conditioned on events~~ — closed; three timed re-asks remain in [#360](https://github.com/dwindlehop-pixel/hyades-4x/issues/360) |
 | T-143 | [#36](https://github.com/dwindlehop-pixel/hyades-4x/issues/36) | Every empire forges every super — make forging a forge's purpose, then trade supers |
 | T-141 | [#37](https://github.com/dwindlehop-pixel/hyades-4x/issues/37) | Decide whether spent-round debris should be cut |
 | T-140 | [#38](https://github.com/dwindlehop-pixel/hyades-4x/issues/38) | Sweep the sentry ratio and its thresholds |
@@ -99,7 +99,7 @@ issue covering a staged plan whose stages are tracked inside it.
 | T-02 | [#61](https://github.com/dwindlehop-pixel/hyades-4x/issues/61) | ~~Restore `examples/bench_hex_size.rs`, sweeping entity count~~ — closed |
 | T-03 | [#62](https://github.com/dwindlehop-pixel/hyades-4x/issues/62) | Slag as a bank entry — R-O59 |
 | T-04 | [#63](https://github.com/dwindlehop-pixel/hyades-4x/issues/63) | Magazine mass on ordnance families — R-O60 / R-XM6 |
-| T-05 | [#64](https://github.com/dwindlehop-pixel/hyades-4x/issues/64) | `min_time_search` as a reachability-cone query — R-O31 |
+| T-05 | [#64](https://github.com/dwindlehop-pixel/hyades-4x/issues/64) | ~~`min_time_search` as a reachability-cone query — R-O31~~ — closed |
 | T-06 | [#65](https://github.com/dwindlehop-pixel/hyades-4x/issues/65) | ~~Split three long functions~~ — closed |
 | T-07 | [#66](https://github.com/dwindlehop-pixel/hyades-4x/issues/66) | Recalibrate `centrality_scale` |
 | T-43 | [#67](https://github.com/dwindlehop-pixel/hyades-4x/issues/67) | The cost ladder can no longer be swept one leg at a time |
