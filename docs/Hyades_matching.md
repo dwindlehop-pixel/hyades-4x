@@ -36,9 +36,10 @@ some queue; **change nothing if the existing approach is best.**
   **Superseded — both premises have expired.** (a) There is no 600-planet
   cap any more: `GalaxyConfig::new(3, seed)` generates **6,725** planets, so
   every O(P) scan is ~11× the length this paragraph assumed. (b) The 847×
-  margin cites `examples/bench_hex_size.rs`, which **is not present in this
-  tree** (it is also cited by `galaxy.rs`, `tests/smoke.rs` and
-  `tests/determinism.rs`); until it is restored the margin is unverified.
+  margin cites `examples/bench_hex_size.rs`, which was missing from the
+  tree until T-02 restored it as a sweep over *entity count* rather than hex
+  size; the 847× figure was never re-measured and is not carried. Run it for
+  the current margin per segment of a run.
   (c) "At current entity counts" was written when colonization stalled at a
   few dozen colonies — the expansion fixes take a 3-seat game to thousands
   of vehicles, and the scans multiply per agent exactly as "Speed tomorrow"

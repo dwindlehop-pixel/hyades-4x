@@ -4,8 +4,8 @@
 use hyades_engine::prelude::*;
 
 /// Shorter horizon than the default — galaxies are now thousands of planets
-/// at the default 10 ly hex (this conversation, benchmarked in
-/// `examples/bench_hex_size.rs`); release-mode throughput comfortably
+/// (`examples/bench_hex_size.rs` reports throughput against entity count
+/// through a run, T-02); release-mode throughput comfortably
 /// clears the confirmed 2.5-simulated-years/real-second target, but these
 /// tests don't need the full default horizon to prove what they're checking.
 ///
