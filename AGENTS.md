@@ -1579,17 +1579,18 @@ block fast feedback: `tests/balance.rs` (the tuned combat goldens) and
 
 ### Releases
 
-A release is a git tag `vMMM.mmm.bbb` (three zero-padded digits each), cut by
-`.github/workflows/release.yml` on every `main` commit whose CI passed —
+A release is a git tag `vMMM.mmm.bbb` (three zero-padded digits each) on a
+branch `release/vMMM`, cut once a day by `.github/workflows/release.yml` for
+the batch of green `main` commits since the last one —
 `docs/Hyades_releases.md` is the rule. **No person or agent picks a version
-number** (the author's ruling): major is the pass percentage of the launch suite
-`tests/launch.rs` and never falls, minor bumps when the test inventory changes,
-bugfix otherwise. Two things follow for your work:
+number** (the author's ruling). The launch test, `examples/launch_census`,
+samples games: a card that is new or whose strength swings is a major release,
+a new kind of entity or system appearing in the sampled games is a minor one,
+and everything else is a bugfix. Two things follow for your work:
 
-- **A test in `tests/launch.rs` is a launch criterion**, marked
-  `#[ignore = "launch criterion"]` so the CI gate stays green while it fails.
-  The criteria are the author's; do not add one without being asked. A criterion
-  that has passed at a release and fails later blocks every release after it.
+- **Code no sampled game reaches does not move the version.** A new system is a
+  minor release when an instance of it shows up in the census, not when it
+  merges.
 - **A measurement too expensive to rerun per commit is stamped with the release**
   it was measured at, never a commit (R-TECH15), and a reader refuses a stamp from
   another major or minor release.

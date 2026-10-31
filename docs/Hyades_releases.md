@@ -11,9 +11,14 @@
 > significant change in player strategy. Bugfix just more closely align spec
 > with implementation, or resolve performance issues.
 
+Followed by two rulings that §2 implements: the number is assigned
+mechanically from test status, and the launch test decides it by sampling
+games for new cards, card-strength swings and new systems.
+
 ## 1. The tag
 
-A release is an **annotated git tag on a commit of `main`**, named
+A release is an **annotated git tag on the head of a release branch**
+(`release/vMMM`, §2), named
 
 ```
 vMMM.mmm.bbb
@@ -21,59 +26,76 @@ vMMM.mmm.bbb
 
 | field | name | width | meaning |
 |---|---|---|---|
-| `MMM` | major | 3 digits, zero-padded | progress toward launch; **`100` is launch-ready** |
-| `mmm` | minor | 3 digits, zero-padded | a change to a system that does not significantly change player strategy |
-| `bbb` | bugfix | 3 digits, zero-padded | the implementation brought closer to the spec, or a performance fix |
+| `MMM` | major | 3 digits, zero-padded | progress toward launch: a new card, or a large swing in a defined card's behavior |
+| `mmm` | minor | 3 digits, zero-padded | a new game system (Design, Doctrine, galaxy generation, the Exchange, …) seen in sampled games |
+| `bbb` | bugfix | 3 digits, zero-padded | everything else: the implementation brought closer to the spec, or a performance fix |
 
 The `v` prefix is the common git convention and keeps release tags apart from
 any other tag; the repository had no tags before this ruling, so no convention
 competed with it.
 
-## 2. The version is assigned by test status
+## 2. The version is assigned by the launch test
 
-The author's follow-up ruling: *"Version number should be assigned mechanically
-based on test status, not produced by manual intervention or agent inference."*
-No person or agent chooses a release number, and no step takes one as input.
+The author's rulings: *"Version number should be assigned mechanically based on
+test status, not produced by manual intervention or agent inference"*, and
+*"All changes are bugfix unless launch test detects changes."* No person or
+agent chooses a release number, and no step takes one as input.
 
-**When.** `.github/workflows/release.yml` runs after every CI run on a push to
-`main`. If CI passed and the commit has no release tag, it cuts one. A pull
-request is never a release. CI's `cancel-in-progress` means a commit superseded
-mid-run is not released; the next one is.
+**When.** `.github/workflows/release.yml` runs once a day (06:00 UTC) and on
+demand, never per commit. It takes the newest commit of `main` whose CI run
+passed, and releases the batch of commits since the last release tag. With no
+new commits it does nothing.
 
-**What it reads.** Two test results, both stored in the tag's annotation so the
-next release can compare against them:
+**The launch test**, `examples/launch_census`, samples games and prints a
+census (its doc comment defines every line):
 
-| input | how it is read |
+| census line | what it samples |
 |---|---|
-| the **launch suite**, `tests/launch.rs` | run with `--include-ignored`; each test is one launch criterion, ignored by the CI gate because it fails until met. `L` = the pass percentage, `floor(100 × passed / total)`, `0` for an empty suite |
-| the **test inventory** | the name of every test in the workspace, `cargo test --workspace --all-targets -- --list` |
+| `card <id> <seed> <strength>` | each **defined card** (no `NotYetImplemented` write, landed on every even seat), played at the round-0 barrier against a pass arm on the same galaxy; `strength` is the mean log-ratio of the card's own tree's stock |
+| `kind <category> <name>` | each **kind** with at least one instance in a sampled game: a `LogEvent` variant raised (`system`), a `VehicleKind` standing (`entity`), a `CardEffect` variant that landed (`effect`) |
+
+Eight seeds, six seats, 300 worlds, 500 years; about 40 s in release on one
+core, bit-identical across runs. The census is stored in the release tag's
+annotation, so the next batch compares against it.
 
 **The rule** (`scripts/next_release.sh`), against the previous release
 `P.p.b`:
 
-| condition, checked in order | next release |
-|---|---|
-| a launch test that passed at the previous release fails now | **none** — the workflow fails |
-| `L > P` | `L.000.000` |
-| the inventory differs from the previous release's (a test added, removed or renamed) | `P.(p+1).000` |
-| otherwise | `P.p.(b+1)` |
+| condition, checked in order | level | next release |
+|---|---|---|
+| a card id is defined that was not, or one that was is no longer | major | `(P+1).000.000` |
+| a **large swing**: over the seeds both censuses carry, a card's mean paired change in strength exceeds `ln 1.25` *and* twice its standard error | major | `(P+1).000.000` |
+| a kind appears that the previous census lacks | minor | `P.(p+1).000` |
+| otherwise | bugfix | `P.p.(b+1)` |
 
-The first release has no predecessor and comes out `v000.001.000`.
+Adding code that no sampled game reaches changes nothing: a system counts once
+an instance of it shows up in the census. The first release has no
+predecessor, so every card is new and it comes out **`v001.000.000`**.
+
+*`OPEN`:* the large-swing threshold, `ln 1.25` (a card 25% stronger or weaker
+on its own tree's stock) at 2 standard errors, is a placeholder; so is
+Technology's strength, which averages the Expansion and Growth ratios until
+T-131 gives the tree a stock.
+
+**Release branches.** Each major release is its own branch, `release/vMMM`,
+started at the batch's last commit of `main`. Pull requests merge to `main`
+as before; the release workflow then fast-forwards the current major's branch
+to the batch for a minor or bugfix release, or starts the next major's branch
+for a major one. A release branch only ever receives `main`, so the forward is
+always fast, and an older major's branch stays where its last release left it.
+The tag sits on the branch's head.
 
 **Consequences, so nobody re-derives them:**
 
-- **Major never falls.** Adding a criterion lowers the pass fraction; major holds
-  until the fraction passes it again. A criterion that regresses blocks every
-  release until it passes again.
-- **Major is only as meaningful as the suite.** The suite starts empty, so major
-  is `000` until the author writes criteria into it.
-- **The minor/bugfix split is a proxy.** Under this rule a new test marks a
-  system change; a merge that only fixes or speeds up existing behavior under
-  existing tests is a bugfix. *`OPEN`:* the author is choosing between this rule,
-  a change to a pinned golden, and a change under `src/`.
+- **Major counts card changes, not a pass fraction.** The original ruling's
+  "major 100 is launch-ready" has no mechanical reading under this rule yet.
+- **A sampling bed is a bed** (`AGENTS.md` §6): the census plays cards through
+  `apply_orders` at the protocol's barrier and varies nothing but the galaxy.
+- **Changing the launch test changes the census.** A new census column or a new
+  seed reads as new kinds or new strengths, so a landing that edits
+  `launch_census` should expect its batch to be a minor or major release.
 - **The crates' Cargo versions do not follow the release.** A tag is cut after
-  the commit lands, so no commit can carry its own release number; the tag is the
-  only record.
+  its commits land, so the tag is the only record.
 
 ## 3. Staleness is a release number
 

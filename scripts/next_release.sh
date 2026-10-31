@@ -1,64 +1,77 @@
 #!/usr/bin/env bash
-# Assigns the next release tag from test status alone (docs/Hyades_releases.md,
-# R-TECH15). No input is a judgment: every field is a function of the files below.
+# Assigns the next release from the launch test alone (docs/Hyades_releases.md
+# §2). No input is a judgment: the level is a function of two census files.
 #
-#   next_release.sh PREV_TAG PREV_NOTES INVENTORY LAUNCH_RESULTS OUT_NOTES
+#   next_release.sh PREV_TAG PREV_NOTES CENSUS OUT_NOTES
 #
-# PREV_TAG        the last release tag, or "" when there is none
-# PREV_NOTES      that tag's annotation (ignored when PREV_TAG is "")
-# INVENTORY       every test name in the workspace, one per line
-# LAUNCH_RESULTS  one line per launch-suite test: "<name> ok" or "<name> FAILED"
-# OUT_NOTES       where to write the new tag's annotation
+# PREV_TAG    the last release tag, or "" when there is none
+# PREV_NOTES  that tag's annotation, which carries its census (ignored when
+#             PREV_TAG is "")
+# CENSUS      this batch's `examples/launch_census` output
+# OUT_NOTES   where to write the new tag's annotation
 #
-# Prints the new tag on stdout. Exits 1, printing the reason on stderr, when a
-# launch test that passed at PREV_TAG fails now.
+# Prints "<tag> <release branch> <level>" on stdout, level one of major, minor,
+# bugfix. The reasons go to stderr.
+#
+# major   a card id in CENSUS that PREV lacks, a card PREV had that CENSUS lacks,
+#         or a large swing: over the seeds both carry, the mean paired change in
+#         a card's strength exceeds both SWING_LN and twice its standard error
+# minor   otherwise, a kind line in CENSUS that PREV lacks
+# bugfix  otherwise
 set -euo pipefail
-prev_tag=$1 prev_notes=$2 inventory=$3 launch=$4 out=$5
+prev_tag=$1 prev_notes=$2 census=$3 out=$4
+SWING_LN=0.223144 # ln(1.25): a card 25% stronger or weaker on its own tree's stock
 
-section() { # section NAME FILE: the lines under "[NAME]" up to the next header
-  awk -v s="[$1]" '/^\[/{on=($0==s); next} on' "$2"
-}
+prev=$(mktemp)
+if [ -n "$prev_tag" ]; then grep -E '^(card|kind) ' "$prev_notes" >"$prev" || true; fi
 
-inv_now=$(sort -u "$inventory")
-pass_now=$(awk '$2=="ok"{print $1}' "$launch" | sort -u)
-total=$(awk 'NF' "$launch" | wc -l)
-passed=$(printf '%s' "$pass_now" | awk 'NF' | wc -l)
-measured=0
-if [ "$total" -gt 0 ]; then measured=$((100 * passed / total)); fi
+level=$(awk -v swing="$SWING_LN" '
+  { file = (FILENAME == ARGV[1]) ? 1 : 2 }
+  $1 == "card" { if (file == 1) { p[$2] = 1; pv[$2, $3] = $4 } else { n[$2] = 1; nv[$2, $3] = $4 } }
+  $1 == "kind" { if (file == 1) pk[$2 " " $3] = 1; else nk[$2 " " $3] = 1 }
+  END {
+    major = 0; minor = 0
+    for (c in n) if (!(c in p)) { print "new card " c > "/dev/stderr"; major = 1 }
+    for (c in p) if (!(c in n)) { print "card no longer defined " c > "/dev/stderr"; major = 1 }
+    for (k in nv) {
+      split(k, a, SUBSEP)
+      if ((a[1], a[2]) in pv) { d = nv[k] - pv[k]; cnt[a[1]]++; sum[a[1]] += d; sq[a[1]] += d * d }
+    }
+    for (c in cnt) {
+      m = sum[c] / cnt[c]
+      var = cnt[c] > 1 ? (sq[c] - cnt[c] * m * m) / (cnt[c] - 1) : 0
+      se = sqrt(var > 0 ? var : 0) / sqrt(cnt[c])
+      am = m < 0 ? -m : m
+      if (am > swing && am > 2 * se) {
+        printf "card %s strength swing %+.4f (se %.4f, %d seeds)\n", c, m, se, cnt[c] > "/dev/stderr"; major = 1
+      }
+    }
+    for (k in nk) if (!(k in pk)) { print "new kind " k > "/dev/stderr"; minor = 1 }
+    print major ? "major" : (minor ? "minor" : "bugfix")
+  }' "$prev" "$census")
+rm -f "$prev"
 
 if [ -z "$prev_tag" ]; then
-  pM=0 pm=0 pb=0 inv_prev="" pass_prev=""
+  M=0 m=0 b=0
 else
-  IFS=. read -r pM pm pb <<<"${prev_tag#v}"
-  pM=$((10#$pM)) pm=$((10#$pm)) pb=$((10#$pb))
-  inv_prev=$(section inventory "$prev_notes" | sort -u)
-  pass_prev=$(section launch-passing "$prev_notes" | sort -u)
+  IFS=. read -r M m b <<<"${prev_tag#v}"
+  M=$((10#$M)) m=$((10#$m)) b=$((10#$b))
 fi
-
-regressed=$(comm -23 <(printf '%s\n' "$pass_prev" | awk 'NF') <(printf '%s\n' "$pass_now" | awk 'NF'))
-if [ -n "$regressed" ]; then
-  echo "launch tests that passed at $prev_tag fail now; no release:" >&2
-  echo "$regressed" >&2
+case $level in
+  major) M=$((M + 1)) m=0 b=0 ;;
+  minor) m=$((m + 1)) b=0 ;;
+  bugfix) b=$((b + 1)) ;;
+esac
+if [ "$M" -gt 999 ] || [ "$m" -gt 999 ] || [ "$b" -gt 999 ]; then
+  echo "a field passed 999; the three-digit format cannot hold it" >&2
   exit 1
 fi
-
-major=$(( measured > pM ? measured : pM ))
-if [ "$major" -gt "$pM" ]; then
-  minor=0 bugfix=0
-elif [ -z "$prev_tag" ] || [ "$inv_now" != "$inv_prev" ]; then
-  minor=$((pm + 1)) bugfix=0
-else
-  minor=$pm bugfix=$((pb + 1))
-fi
-tag=$(printf 'v%03d.%03d.%03d' "$major" "$minor" "$bugfix")
+tag=$(printf 'v%03d.%03d.%03d' "$M" "$m" "$b")
+branch=$(printf 'release/v%03d' "$M")
 
 {
-  echo "release $tag"
+  echo "release $tag ($level)"
   echo
-  echo "launch suite: $passed of $total pass ($measured%)"
-  echo "[launch-passing]"
-  [ -n "$pass_now" ] && echo "$pass_now"
-  echo "[inventory]"
-  echo "$inv_now"
+  sort "$census"
 } >"$out"
-echo "$tag"
+echo "$tag $branch $level"

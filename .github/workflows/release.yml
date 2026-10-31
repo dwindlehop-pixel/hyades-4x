@@ -1,21 +1,21 @@
 name: Release
 
-# Cuts a release tag on every commit of main whose CI run passed. The version is
-# assigned by scripts/next_release.sh from test status alone
-# (docs/Hyades_releases.md); nothing here takes a version as input.
+# Cuts one release for the batch of main commits since the last one
+# (docs/Hyades_releases.md). The version is assigned by scripts/next_release.sh
+# from the launch test's census alone; nothing here takes a version as input.
 on:
-  workflow_run:
-    workflows: [CI]
-    types: [completed]
-    branches: [main]
+  schedule:
+    - cron: "0 6 * * *" # daily, 06:00 UTC
+  workflow_dispatch:
 
-# One release at a time, in push order; never cancel one half-way.
+# One release at a time; never cancel one half-way.
 concurrency:
   group: release
   cancel-in-progress: false
 
 permissions:
   contents: write
+  actions: read
 
 env:
   CARGO_TERM_COLOR: always
@@ -23,50 +23,63 @@ env:
 
 jobs:
   release:
-    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push'
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v5
         with:
-          ref: ${{ github.event.workflow_run.head_sha }}
+          ref: main
           fetch-depth: 0
-      - name: Already released?
-        id: done
+      - name: Newest green commit of main
+        id: pick
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          if git tag --points-at HEAD | grep -qE '^v[0-9]{3}\.[0-9]{3}\.[0-9]{3}$'; then
-            echo "skip=true" >> "$GITHUB_OUTPUT"
+          set -o pipefail
+          sha=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow ci.yml --branch main --event push \
+                  --status success --limit 1 --json headSha -q '.[0].headSha')
+          [ -n "$sha" ] || { echo "no green CI run on main"; echo "skip=true" >> "$GITHUB_OUTPUT"; exit 0; }
+          git checkout -q "$sha"
+          prev=$(git describe --tags --abbrev=0 --match 'v[0-9][0-9][0-9].[0-9][0-9][0-9].[0-9][0-9][0-9]' HEAD 2>/dev/null || true)
+          if [ -n "$prev" ] && [ "$(git rev-list -n1 "$prev")" = "$sha" ]; then
+            echo "no commits since $prev"; echo "skip=true" >> "$GITHUB_OUTPUT"; exit 0
           fi
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "prev=$prev" >> "$GITHUB_OUTPUT"
+          echo "batch: ${prev:-start}..$sha, $(git rev-list --count ${prev:+$prev..}HEAD) commits"
       - name: Toolchain
-        if: steps.done.outputs.skip != 'true'
+        if: steps.pick.outputs.skip != 'true'
         run: |
           rustup toolchain install stable --profile minimal --no-self-update
           rustup default stable
-      - name: Test inventory
-        if: steps.done.outputs.skip != 'true'
+      - name: Launch test
+        if: steps.pick.outputs.skip != 'true'
         run: |
-          set -o pipefail
-          cargo test --workspace --all-targets -- --list 2>/dev/null \
-            | sed -n 's/: test$//p' > "$RUNNER_TEMP/inventory"
-          wc -l < "$RUNNER_TEMP/inventory"
-      - name: Launch suite
-        if: steps.done.outputs.skip != 'true'
+          cargo run --release --example launch_census > "$RUNNER_TEMP/census"
+          grep -c '^card ' "$RUNNER_TEMP/census"
+          grep -c '^kind ' "$RUNNER_TEMP/census"
+      - name: Number, branch and tag
+        if: steps.pick.outputs.skip != 'true'
+        env:
+          PREV: ${{ steps.pick.outputs.prev }}
+          SHA: ${{ steps.pick.outputs.sha }}
         run: |
-          # A failing criterion is expected; its outcome is data, not a job failure.
-          cargo test --test launch -- --include-ignored --test-threads=1 > "$RUNNER_TEMP/launch.out" || true
-          sed -nE 's/^test (.*) \.\.\. (ok|FAILED)$/\1 \2/p' "$RUNNER_TEMP/launch.out" > "$RUNNER_TEMP/launch"
-          grep -q '^test result:' "$RUNNER_TEMP/launch.out" || { cat "$RUNNER_TEMP/launch.out"; exit 1; }
-          cat "$RUNNER_TEMP/launch"
-      - name: Tag
-        if: steps.done.outputs.skip != 'true'
-        run: |
-          prev=$(git describe --tags --abbrev=0 --match 'v[0-9][0-9][0-9].[0-9][0-9][0-9].[0-9][0-9][0-9]' HEAD 2>/dev/null || true)
           : > "$RUNNER_TEMP/prev_notes"
-          [ -n "$prev" ] && git tag -l --format='%(contents)' "$prev" > "$RUNNER_TEMP/prev_notes"
-          tag=$(scripts/next_release.sh "$prev" "$RUNNER_TEMP/prev_notes" "$RUNNER_TEMP/inventory" \
-                "$RUNNER_TEMP/launch" "$RUNNER_TEMP/notes")
-          echo "previous: ${prev:-none}, new: $tag"
+          if [ -n "$PREV" ]; then git tag -l --format='%(contents)' "$PREV" > "$RUNNER_TEMP/prev_notes"; fi
+          read -r tag branch level < <(scripts/next_release.sh "$PREV" "$RUNNER_TEMP/prev_notes" \
+                                        "$RUNNER_TEMP/census" "$RUNNER_TEMP/notes")
+          echo "previous: ${PREV:-none}, new: $tag ($level) on $branch"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # A major release starts its own branch at the batch's last commit; a
+          # minor or bugfix release fast-forwards its major's branch to it. A
+          # release branch only ever receives main, so the forward is always fast.
+          if git ls-remote --exit-code --heads origin "$branch" > /dev/null; then
+            git fetch -q origin "$branch"
+            git checkout -q -B "$branch" "origin/$branch"
+            git merge -q --ff-only "$SHA"
+          else
+            git checkout -q -B "$branch" "$SHA"
+          fi
           git tag -a "$tag" -F "$RUNNER_TEMP/notes"
-          git push origin "$tag"
+          git push origin "$branch" "$tag"
