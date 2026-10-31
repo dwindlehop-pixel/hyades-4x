@@ -62,9 +62,12 @@ Definitions: `Hyades_trees_and_card_value.md` §2.3.
 
 The Technology tree's static Design rating (`Hyades_technology_tree.md` §4,
 T-131), written from `examples/design_rating all <seeds>`. The first line of
-`design_ratings.tsv` stamps the engine commit and the bed; **a rating is a
-measurement of that engine and no other** (R-TECH15), so read the stamp before
-the numbers.
+`design_ratings.tsv` stamps the engine and the bed; **a rating is a
+measurement of that engine and no other**, so read the stamp before the numbers.
+Since R-TECH15 the stamp is a release (`release vMMM.mmm.bbb`,
+`docs/Hyades_releases.md`), and a reader refuses a table from another major or
+minor release. The table checked in now carries commit `52fc4f2`, from before
+the first release, so a reader refuses it until it is regenerated.
 
 `design_rating_matches.tsv` is the raw record — **one row per match**, every
 pair on every seed with the seats swapped — from which every rating and interval

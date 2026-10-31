@@ -1,0 +1,72 @@
+name: Release
+
+# Cuts a release tag on every commit of main whose CI run passed. The version is
+# assigned by scripts/next_release.sh from test status alone
+# (docs/Hyades_releases.md); nothing here takes a version as input.
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+
+# One release at a time, in push order; never cancel one half-way.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -D warnings
+
+jobs:
+  release:
+    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 0
+      - name: Already released?
+        id: done
+        run: |
+          if git tag --points-at HEAD | grep -qE '^v[0-9]{3}\.[0-9]{3}\.[0-9]{3}$'; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Toolchain
+        if: steps.done.outputs.skip != 'true'
+        run: |
+          rustup toolchain install stable --profile minimal --no-self-update
+          rustup default stable
+      - name: Test inventory
+        if: steps.done.outputs.skip != 'true'
+        run: |
+          set -o pipefail
+          cargo test --workspace --all-targets -- --list 2>/dev/null \
+            | sed -n 's/: test$//p' > "$RUNNER_TEMP/inventory"
+          wc -l < "$RUNNER_TEMP/inventory"
+      - name: Launch suite
+        if: steps.done.outputs.skip != 'true'
+        run: |
+          # A failing criterion is expected; its outcome is data, not a job failure.
+          cargo test --test launch -- --include-ignored --test-threads=1 > "$RUNNER_TEMP/launch.out" || true
+          sed -nE 's/^test (.*) \.\.\. (ok|FAILED)$/\1 \2/p' "$RUNNER_TEMP/launch.out" > "$RUNNER_TEMP/launch"
+          grep -q '^test result:' "$RUNNER_TEMP/launch.out" || { cat "$RUNNER_TEMP/launch.out"; exit 1; }
+          cat "$RUNNER_TEMP/launch"
+      - name: Tag
+        if: steps.done.outputs.skip != 'true'
+        run: |
+          prev=$(git describe --tags --abbrev=0 --match 'v[0-9][0-9][0-9].[0-9][0-9][0-9].[0-9][0-9][0-9]' HEAD 2>/dev/null || true)
+          : > "$RUNNER_TEMP/prev_notes"
+          [ -n "$prev" ] && git tag -l --format='%(contents)' "$prev" > "$RUNNER_TEMP/prev_notes"
+          tag=$(scripts/next_release.sh "$prev" "$RUNNER_TEMP/prev_notes" "$RUNNER_TEMP/inventory" \
+                "$RUNNER_TEMP/launch" "$RUNNER_TEMP/notes")
+          echo "previous: ${prev:-none}, new: $tag"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "$tag" -F "$RUNNER_TEMP/notes"
+          git push origin "$tag"

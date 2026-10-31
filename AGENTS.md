@@ -1577,6 +1577,23 @@ The `viewer` job builds the site with `web/build.sh` and runs
 block fast feedback: `tests/balance.rs` (the tuned combat goldens) and
 `coverage_trace`.
 
+### Releases
+
+A release is a git tag `vMMM.mmm.bbb` (three zero-padded digits each), cut by
+`.github/workflows/release.yml` on every `main` commit whose CI passed —
+`docs/Hyades_releases.md` is the rule. **No person or agent picks a version
+number** (the author's ruling): major is the pass percentage of the launch suite
+`tests/launch.rs` and never falls, minor bumps when the test inventory changes,
+bugfix otherwise. Two things follow for your work:
+
+- **A test in `tests/launch.rs` is a launch criterion**, marked
+  `#[ignore = "launch criterion"]` so the CI gate stays green while it fails.
+  The criteria are the author's; do not add one without being asked. A criterion
+  that has passed at a release and fails later blocks every release after it.
+- **A measurement too expensive to rerun per commit is stamped with the release**
+  it was measured at, never a commit (R-TECH15), and a reader refuses a stamp from
+  another major or minor release.
+
 `min_time_search` is **not in CI** — it is an offline job. At the ratified
 defaults each of its ~270 trials is a full-colonization sim, putting the search
 around 40 minutes locally and longer on a runner. Run it by hand when tuning.
