@@ -1592,183 +1592,15 @@ impl Autopilot for BaselineAutopilot {
             (Some(col), Some(mine)) if mine.ranked.score > col.ranked.score => {
                 Some((hull_order(HullType::LimitedSystems), mine.ranked.score, ctx.mining_pair_cost))
             }
-            (Some(col), _) => {
-                // **Carry up to the target's carrying capacity, and no more —
-                // then take the smallest hull that earns its price.**
-                //
-                // Population above `K` does not settle back to it, it crashes
-                // below it: a `Band II` seed on a `Band I` colony ends its first
-                // tick at 0.25 Bands, and forcing that cost 5.9% of colony-years
-                // with the colony *count* unchanged on every seed. So the load a
-                // ship flies is `min(hull capacity, K)`.
-                //
-                // **Since T-67 the founding `K` does not depend on the hull at
-                // all.** Infrastructure left the carrying-capacity minimum
-                // (`Hyades_industry.md` §1.1), so a colony seeds to the
-                // *world's* ceiling whoever founded it. R-O76's criterion —
-                // "founding `K` per mineral" — was reading
-                // `k_pot.min(founding_infra)`, and that term no longer
-                // describes anything the engine does. Left in place it would be
-                // the exact defect this project keeps recording: a score whose
-                // inputs stopped meaning what the score says they mean.
-                //
-                // **The replacement is the cheapest hull that can found at
-                // all**, and the reason is the objective rather than the
-                // physics. "Settlers delivered per mineral" is the tempting
-                // reading — a General hull costs 10x a Medium and its hold is
-                // 31.6x, so per mineral it lands three times the people — and
-                // it is the wrong question: **a deeper seed does not found
-                // another world.** Ten Mediums make ten colonies, each with its
-                // own `K` and its own growth curve; one General makes one
-                // colony that starts further up a curve it would have climbed
-                // anyway. Against a colony-count objective the cheap hull wins,
-                // which is R-O76's *finding* surviving even though R-O76's
-                // mechanism did not.
-                //
-                // **R-IND11 (open):** whether a General colonizer is ever worth
-                // it now that the hold is the only thing distinguishing the
-                // hulls. It cannot be answered yet — it turns on the industrial
-                // ramp (`Hyades_industry.md` §3), where a General hull is a
-                // twelve-year yard commitment against a Medium's three, and on
-                // whether a deep seed reaches a rate threshold sooner. Both are
-                // stages that have not landed.
-                // **What a hull delivers is the least of three things**, since
-                // R-O74 was closed: its hold, the target world's ceiling, and
-                // what this center can actually spare. The third is new — a
-                // hold used to be a promise because the settlers were conjured
-                // — and leaving it out would price a General hull for people
-                // the center does not have.
-                // **What a hull delivers is decided per destination, not per
-                // hull** (R-IND12). `settlers_by_hull` is `sim::settler_target`
-                // evaluated for this candidate — the world's own ceiling, this
-                // center's population, and the transit discount, already folded
-                // in. There is nothing left to `min` against here, and doing so
-                // would be the second copy of a rule this repo has been bitten
-                // by before.
-                let per_mineral = |delivered: Kilotons, cost: Price| {
-                    if cost > Price::ZERO {
-                        delivered.kilotons() / cost.kilotons()
-                    } else {
-                        f64::INFINITY
-                    }
-                };
-                let options = [
-                    (HullType::MediumSystems, ctx.colonizer_cost, col.settlers_by_hull[0]),
-                    (general_colonizer_hull(doctrine), ctx.general_colonizer_cost, col.settlers_by_hull[1]),
-                ];
-                // **Only hulls this center can pay for today.** The score picks
-                // between real options; it does not pick an option and then
-                // discover it is unaffordable.
-                //
-                // That was the bug: the best `K` per mineral was chosen against
-                // the whole ladder, and `can_expand` below then refused it — so
-                // a young colony that could afford a Medium colonizer *now*
-                // picked a General it could not afford and built **nothing**,
-                // banking indefinitely. `ColonizerHull::GeneralWhenAffordable`
-                // used to carry this rule explicitly; deriving the hull dropped
-                // it, and nothing noticed because the shipped ladder happened
-                // to make Medium the answer anyway.
-                let affordable = |c: Price| ctx.stockpile_total + Price::new(1e-9) >= c;
-                let best = options
-                    .iter()
-                    .filter(|(_, cost, delivered)| affordable(*cost) && *delivered > Kilotons::ZERO)
-                    .max_by(|a, b| {
-                        // Cheapest-wins is the negated price, so both policies
-                        // are a `max` over one key and the comparator stays one
-                        // expression.
-                        let key = |o: &&(HullType, Price, Kilotons)| match doctrine.colonizer_policy {
-                            ColonizerPolicy::CheapestViable => -o.1.kilotons(),
-                            ColonizerPolicy::SettlersPerMineral => per_mineral(o.2, o.1),
-                        };
-                        key(a).partial_cmp(&key(b)).unwrap_or(core::cmp::Ordering::Equal).then(a.0.cmp(&b.0))
-                    })
-                    // Nothing affordable: name the cheapest that could found at
-                    // all, so `can_expand` refuses it and the center saves
-                    // toward something real rather than toward nothing.
-                    .or_else(|| options.iter().find(|(_, _, delivered)| *delivered > Kilotons::ZERO));
-                best.map(|&(hull, cost, _)| (hull_order(hull), col.ranked.score, cost))
-            }
+            (Some(col), _) => colonizer_order(doctrine, ctx, col),
             (None, Some(mine)) => Some((hull_order(HullType::LimitedSystems), mine.ranked.score, ctx.mining_pair_cost)),
             (None, None) => None,
         };
         let outward_cost = outward.map(|(_, _, c)| c).unwrap_or(Price::ZERO);
         let can_expand = ctx.stockpile_total + Price::new(1e-9) >= outward_cost;
 
-        // **Deepen-vs-expand as a return on the minerals it costs (R-O68, T-51).**
-        //
-        // ~~`b · deepen_headroom >= (1 − b) · score`.~~ Those two sides were not
-        // in the same unit. The left was a *Band* difference, `k_potential −
-        // infra`, bounded by 4. The right was `rank`'s weighted sum over a Band,
-        // a mineral density and a hub figure — unbounded, and with no price in
-        // it at all. So `reinvest_bias` was not a convex trade but a unit
-        // conversion with a preference hidden inside it: measured on seed 1
-        // (`examples/score_scale`), headroom ran to a mean 2.55 against colony
-        // scores of p05 4.40 / median 6.17 / max 12.16 — and the branch compares
-        // against the **max**, because `outward` takes the best candidate. It
-        // could not fire at the shipped `0.5` while any candidate existed.
-        //
-        // **Both sides are now `rank` score per kilotonne committed**, and
-        // neither half introduces a constant:
-        //
-        // ```text
-        // expand = score / outward_cost                 // this candidate, at its price
-        // deepen = w_k · min(1, headroom) / infra_cost  // one whole Band, at its price
-        // ```
-        //
-        // `w_k` is the weight `rank` already puts on one Band of `k_potential`
-        // (autopilot-doc §3), and it is the right converter because the two
-        // moves trade in one commodity: expansion **acquires** a world's Bands
-        // of ceiling, deepening **realizes** a Band of them here. The `min(1, ·)`
-        // is what a whole Band actually delivers — `apply_build` steps to the next
-        // whole Band whatever the headroom, so a last partial step pays a full
-        // price for less than a Band.
-        //
-        // The comparison is then an odds ratio — depth wins when
-        // `b/(1 − b) >= expand/deepen` — and that crossover is **state-
-        // dependent**, which is the graded region the old form had nowhere: a
-        // center facing a cheap next whole Band and a mediocre candidate deepens where
-        // one facing an expensive whole Band and a hub does not.
-        //
-        // **What it does not do is revive the branch at the shipped defaults,
-        // and that is the finding rather than a shortfall.** The infra ladder
-        // charges 0.9 kt for the whole Band above the founding one where a Medium
-        // colonizer costs 0.1 kt, so expansion buys tens of times the score per
-        // kilotonne and *ought* to win: the dead branch was the right answer
-        // reached for a wrong reason.
-        //
-        // Measured (`examples/deepen_census`, 600 planets / 1,500 yr, seeds 1
-        // and 7): the run is **bit-identical to the old form** everywhere below
-        // `b = 0.96` — same build mix, same colony count, same colony-years to
-        // the decimal — so this is a units fix and not a behavior change. What
-        // moved is the far end. The old form's cliff sat between 0.5 and 0.9
-        // with **nothing working beyond it** (seed 1 `b = 0.9`: 70 colonies;
-        // seed 7 `b = 0.95`: 3, i.e. the homeworlds alone). The new crossover is
-        // between **0.96 and 0.98**, and 0.97 and 0.98 are working empires that
-        // deepen — 326 infra builds against 88, mean infra Band 1.028 → 1.099,
-        // colony-years −0.24%. So the odds ratio at the crossover is 24–49,
-        // which is the price ladder's own ratio measured from the other side.
-        //
-        // **R-O85** carries what that exposes, and it is not a tuning question:
-        // infrastructure is priced as if it were scarce on a bed where minerals
-        // are the thing piling up unspent, and `fabrication_rate` saturates by
-        // the second whole Band, so the whole Bands above it cost 19 kt and 780 kt to buy
-        // almost no throughput.
-        let b = doctrine.reinvest_bias;
-        let deepen_headroom = (ctx.k_potential - ctx.infra).max(0.0);
-        // Floored rather than branched on zero: `0.0 * f64::INFINITY` is `NaN`,
-        // and a NaN reaching replicated state is fatal (design law #16). Every
-        // price in the engine is positive, so the floor is unreachable in play
-        // and exists only to keep `b = 0` arithmetic.
-        let per_kt = |value: f64, cost: Price| value / cost.kilotons().max(1e-12);
-        let w_deepen = if deepen_possible {
-            b * per_kt(doctrine.rank.w_k * deepen_headroom.min(1.0), ctx.infra_cost)
-        } else {
-            f64::NEG_INFINITY
-        };
-        let w_expand = match outward {
-            Some((_, score, cost)) => (1.0 - b) * per_kt(score, cost),
-            None => f64::NEG_INFINITY,
-        };
+        let (w_deepen, w_expand) =
+            deepen_and_expand_weights(doctrine, ctx, deepen_possible, outward.map(|(_, s, c)| (s, c)));
 
         // Survey is the fallback for a cycle that would otherwise be spent idle,
         // never a pre-emption of an affordable expansion. That ordering matters:
@@ -1853,6 +1685,193 @@ impl Autopilot for BaselineAutopilot {
             survey_fallback
         }
     }
+}
+
+/// The colonizer an expanding center lays down for `col`, its score and its
+/// price: the cheapest affordable hull that founds, or the cheapest that could
+/// found at all (T-06 split it out of `production_choice`; no behavior change).
+fn colonizer_order(doctrine: &Doctrine, ctx: &ProductionContext, col: &Candidate) -> Option<(BuildOrder, f64, Price)> {
+    // **Carry up to the target's carrying capacity, and no more —
+    // then take the smallest hull that earns its price.**
+    //
+    // Population above `K` does not settle back to it, it crashes
+    // below it: a `Band II` seed on a `Band I` colony ends its first
+    // tick at 0.25 Bands, and forcing that cost 5.9% of colony-years
+    // with the colony *count* unchanged on every seed. So the load a
+    // ship flies is `min(hull capacity, K)`.
+    //
+    // **Since T-67 the founding `K` does not depend on the hull at
+    // all.** Infrastructure left the carrying-capacity minimum
+    // (`Hyades_industry.md` §1.1), so a colony seeds to the
+    // *world's* ceiling whoever founded it. R-O76's criterion —
+    // "founding `K` per mineral" — was reading
+    // `k_pot.min(founding_infra)`, and that term no longer
+    // describes anything the engine does. Left in place it would be
+    // the exact defect this project keeps recording: a score whose
+    // inputs stopped meaning what the score says they mean.
+    //
+    // **The replacement is the cheapest hull that can found at
+    // all**, and the reason is the objective rather than the
+    // physics. "Settlers delivered per mineral" is the tempting
+    // reading — a General hull costs 10x a Medium and its hold is
+    // 31.6x, so per mineral it lands three times the people — and
+    // it is the wrong question: **a deeper seed does not found
+    // another world.** Ten Mediums make ten colonies, each with its
+    // own `K` and its own growth curve; one General makes one
+    // colony that starts further up a curve it would have climbed
+    // anyway. Against a colony-count objective the cheap hull wins,
+    // which is R-O76's *finding* surviving even though R-O76's
+    // mechanism did not.
+    //
+    // **R-IND11 (open):** whether a General colonizer is ever worth
+    // it now that the hold is the only thing distinguishing the
+    // hulls. It cannot be answered yet — it turns on the industrial
+    // ramp (`Hyades_industry.md` §3), where a General hull is a
+    // twelve-year yard commitment against a Medium's three, and on
+    // whether a deep seed reaches a rate threshold sooner. Both are
+    // stages that have not landed.
+    // **What a hull delivers is the least of three things**, since
+    // R-O74 was closed: its hold, the target world's ceiling, and
+    // what this center can actually spare. The third is new — a
+    // hold used to be a promise because the settlers were conjured
+    // — and leaving it out would price a General hull for people
+    // the center does not have.
+    // **What a hull delivers is decided per destination, not per
+    // hull** (R-IND12). `settlers_by_hull` is `sim::settler_target`
+    // evaluated for this candidate — the world's own ceiling, this
+    // center's population, and the transit discount, already folded
+    // in. There is nothing left to `min` against here, and doing so
+    // would be the second copy of a rule this repo has been bitten
+    // by before.
+    let per_mineral = |delivered: Kilotons, cost: Price| {
+        if cost > Price::ZERO {
+            delivered.kilotons() / cost.kilotons()
+        } else {
+            f64::INFINITY
+        }
+    };
+    let options = [
+        (HullType::MediumSystems, ctx.colonizer_cost, col.settlers_by_hull[0]),
+        (general_colonizer_hull(doctrine), ctx.general_colonizer_cost, col.settlers_by_hull[1]),
+    ];
+    // **Only hulls this center can pay for today.** The score picks
+    // between real options; it does not pick an option and then
+    // discover it is unaffordable.
+    //
+    // That was the bug: the best `K` per mineral was chosen against
+    // the whole ladder, and `can_expand` below then refused it — so
+    // a young colony that could afford a Medium colonizer *now*
+    // picked a General it could not afford and built **nothing**,
+    // banking indefinitely. `ColonizerHull::GeneralWhenAffordable`
+    // used to carry this rule explicitly; deriving the hull dropped
+    // it, and nothing noticed because the shipped ladder happened
+    // to make Medium the answer anyway.
+    let affordable = |c: Price| ctx.stockpile_total + Price::new(1e-9) >= c;
+    let best = options
+        .iter()
+        .filter(|(_, cost, delivered)| affordable(*cost) && *delivered > Kilotons::ZERO)
+        .max_by(|a, b| {
+            // Cheapest-wins is the negated price, so both policies
+            // are a `max` over one key and the comparator stays one
+            // expression.
+            let key = |o: &&(HullType, Price, Kilotons)| match doctrine.colonizer_policy {
+                ColonizerPolicy::CheapestViable => -o.1.kilotons(),
+                ColonizerPolicy::SettlersPerMineral => per_mineral(o.2, o.1),
+            };
+            key(a).partial_cmp(&key(b)).unwrap_or(core::cmp::Ordering::Equal).then(a.0.cmp(&b.0))
+        })
+        // Nothing affordable: name the cheapest that could found at
+        // all, so `can_expand` refuses it and the center saves
+        // toward something real rather than toward nothing.
+        .or_else(|| options.iter().find(|(_, _, delivered)| *delivered > Kilotons::ZERO));
+    best.map(|&(hull, cost, _)| (hull_order(hull), col.ranked.score, cost))
+}
+
+/// Depth against expansion, each in `rank` score per kilotonne committed and
+/// weighted by `reinvest_bias` (T-06 split it out of `production_choice`; no
+/// behavior change). `outward` is the best outward move's score and price.
+fn deepen_and_expand_weights(
+    doctrine: &Doctrine,
+    ctx: &ProductionContext,
+    deepen_possible: bool,
+    outward: Option<(f64, Price)>,
+) -> (f64, f64) {
+    // **Deepen-vs-expand as a return on the minerals it costs (R-O68, T-51).**
+    //
+    // ~~`b · deepen_headroom >= (1 − b) · score`.~~ Those two sides were not
+    // in the same unit. The left was a *Band* difference, `k_potential −
+    // infra`, bounded by 4. The right was `rank`'s weighted sum over a Band,
+    // a mineral density and a hub figure — unbounded, and with no price in
+    // it at all. So `reinvest_bias` was not a convex trade but a unit
+    // conversion with a preference hidden inside it: measured on seed 1
+    // (`examples/score_scale`), headroom ran to a mean 2.55 against colony
+    // scores of p05 4.40 / median 6.17 / max 12.16 — and the branch compares
+    // against the **max**, because `outward` takes the best candidate. It
+    // could not fire at the shipped `0.5` while any candidate existed.
+    //
+    // **Both sides are now `rank` score per kilotonne committed**, and
+    // neither half introduces a constant:
+    //
+    // ```text
+    // expand = score / outward_cost                 // this candidate, at its price
+    // deepen = w_k · min(1, headroom) / infra_cost  // one whole Band, at its price
+    // ```
+    //
+    // `w_k` is the weight `rank` already puts on one Band of `k_potential`
+    // (autopilot-doc §3), and it is the right converter because the two
+    // moves trade in one commodity: expansion **acquires** a world's Bands
+    // of ceiling, deepening **realizes** a Band of them here. The `min(1, ·)`
+    // is what a whole Band actually delivers — `apply_build` steps to the next
+    // whole Band whatever the headroom, so a last partial step pays a full
+    // price for less than a Band.
+    //
+    // The comparison is then an odds ratio — depth wins when
+    // `b/(1 − b) >= expand/deepen` — and that crossover is **state-
+    // dependent**, which is the graded region the old form had nowhere: a
+    // center facing a cheap next whole Band and a mediocre candidate deepens where
+    // one facing an expensive whole Band and a hub does not.
+    //
+    // **What it does not do is revive the branch at the shipped defaults,
+    // and that is the finding rather than a shortfall.** The infra ladder
+    // charges 0.9 kt for the whole Band above the founding one where a Medium
+    // colonizer costs 0.1 kt, so expansion buys tens of times the score per
+    // kilotonne and *ought* to win: the dead branch was the right answer
+    // reached for a wrong reason.
+    //
+    // Measured (`examples/deepen_census`, 600 planets / 1,500 yr, seeds 1
+    // and 7): the run is **bit-identical to the old form** everywhere below
+    // `b = 0.96` — same build mix, same colony count, same colony-years to
+    // the decimal — so this is a units fix and not a behavior change. What
+    // moved is the far end. The old form's cliff sat between 0.5 and 0.9
+    // with **nothing working beyond it** (seed 1 `b = 0.9`: 70 colonies;
+    // seed 7 `b = 0.95`: 3, i.e. the homeworlds alone). The new crossover is
+    // between **0.96 and 0.98**, and 0.97 and 0.98 are working empires that
+    // deepen — 326 infra builds against 88, mean infra Band 1.028 → 1.099,
+    // colony-years −0.24%. So the odds ratio at the crossover is 24–49,
+    // which is the price ladder's own ratio measured from the other side.
+    //
+    // **R-O85** carries what that exposes, and it is not a tuning question:
+    // infrastructure is priced as if it were scarce on a bed where minerals
+    // are the thing piling up unspent, and `fabrication_rate` saturates by
+    // the second whole Band, so the whole Bands above it cost 19 kt and 780 kt to buy
+    // almost no throughput.
+    let b = doctrine.reinvest_bias;
+    let deepen_headroom = (ctx.k_potential - ctx.infra).max(0.0);
+    // Floored rather than branched on zero: `0.0 * f64::INFINITY` is `NaN`,
+    // and a NaN reaching replicated state is fatal (design law #16). Every
+    // price in the engine is positive, so the floor is unreachable in play
+    // and exists only to keep `b = 0` arithmetic.
+    let per_kt = |value: f64, cost: Price| value / cost.kilotons().max(1e-12);
+    let w_deepen = if deepen_possible {
+        b * per_kt(doctrine.rank.w_k * deepen_headroom.min(1.0), ctx.infra_cost)
+    } else {
+        f64::NEG_INFINITY
+    };
+    let w_expand = match outward {
+        Some((score, cost)) => (1.0 - b) * per_kt(score, cost),
+        None => f64::NEG_INFINITY,
+    };
+    (w_deepen, w_expand)
 }
 
 /// **The hull the armed frontier writes survey onto** — the one branch

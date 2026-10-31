@@ -279,6 +279,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "hyades-parity"
+version = "0.1.0"
+dependencies = [
+ "hyades-engine",
+]
+
+[[package]]
 name = "hyades-sim"
 version = "0.1.0"
 dependencies = [
