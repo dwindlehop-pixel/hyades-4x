@@ -138,6 +138,11 @@ jobs:
             cargo run --release --example "$ex"
             echo "::endgroup::"
           done
+          # T-02: a short arm, so the entity-count benchmark keeps compiling
+          # and running; the full sweep is a by-hand job.
+          echo "::group::bench_hex_size"
+          cargo run --release --example bench_hex_size -- 2 150 50 1
+          echo "::endgroup::"
 
   # The tuned sweeps. Minutes each, so they get their own job rather than
   # holding up the fast feedback above.

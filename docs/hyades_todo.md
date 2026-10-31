@@ -96,7 +96,7 @@ issue covering a staged plan whose stages are tracked inside it.
 | T-82 … T-86 | [#58](https://github.com/dwindlehop-pixel/hyades-4x/issues/58) | The Exchange — `Hyades_politics_trade_and_intelligence.md` §10 |
 | T-78 … T-80 | [#59](https://github.com/dwindlehop-pixel/hyades-4x/issues/59) | The trees: tone, six objectives, card value — `Hyades_trees_and_card_value.md` |
 | T-67 … T-77 | [#60](https://github.com/dwindlehop-pixel/hyades-4x/issues/60) | The industrial layer — `Hyades_industry.md` |
-| T-02 | [#61](https://github.com/dwindlehop-pixel/hyades-4x/issues/61) | Restore `examples/bench_hex_size.rs`, sweeping entity count |
+| T-02 | [#61](https://github.com/dwindlehop-pixel/hyades-4x/issues/61) | ~~Restore `examples/bench_hex_size.rs`, sweeping entity count~~ — closed |
 | T-03 | [#62](https://github.com/dwindlehop-pixel/hyades-4x/issues/62) | Slag as a bank entry — R-O59 |
 | T-04 | [#63](https://github.com/dwindlehop-pixel/hyades-4x/issues/63) | Magazine mass on ordnance families — R-O60 / R-XM6 |
 | T-05 | [#64](https://github.com/dwindlehop-pixel/hyades-4x/issues/64) | `min_time_search` as a reachability-cone query — R-O31 |
