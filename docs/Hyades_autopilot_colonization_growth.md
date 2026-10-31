@@ -428,6 +428,18 @@ a candidate; a forge with no Design paid in supers. T-88's retry floor
 seeds: colony-years −0.24% ± 0.04, work-years +6.07% ± 4.45 (appendix §D.31).
 Test: `a_declined_decision_waits_on_its_events`.
 
+**Audit (T-144, `OPEN` remainder in [#360](https://github.com/dwindlehop-pixel/hyades-4x/issues/360)).**
+The economy tick, the mining tick and the round barrier are rate or protocol
+cadences and stay. `SortieHold` is a one-period timeout on a sortie, not a
+re-ask. Three decisions still re-ask on a timer and do not yet conform:
+`BlockadeReassess` and `PicketReassess` every `intercept_reassess_years`
+(25 yr), and a missile rearm at a center with nothing to send every
+`cycle_years`. Census on `examples/combat_bench`, 450 yr, seeds 1 and 7: 722 and
+262 blockade re-asks of which 22 and 15 moved a hull, zero picket re-asks, zero
+rearm retries, against 3.45 M and 1.76 M events — under 0.02% of events on both
+seeds (a bound from two seeds). The conversion is for conformance with this
+ruling, not throughput.
+
 **6.2 `RATIFIED` — every rate is denominated per `rate_reference_years = 50.0`,
 not per tick.** `tick_scale` multiplies each rate by `cycle_years /
 rate_reference_years`, which is exactly `1.0` at the cadence they were ratified
