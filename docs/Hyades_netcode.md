@@ -594,6 +594,12 @@ to make native and wasm32 runs of the same seed diverge. Rules:
   keeps every expression the same operation on every target.
 - **A logarithm of a constant is evaluated by the compiler**
   (`transcendental::ln_const`), whose float arithmetic is the same IEEE 754.
+- **CI checks it on both targets** (T-128): `tools/parity` computes one digest
+  per case natively and in wasm32 under node — the galaxy at every fair seat
+  count, a 3-seat 500-year run, and the two seeded fights of
+  `tests/determinism.rs` — and the balance job fails on any difference. A
+  digest is over the `Debug` text of the whole value, so a last-bit
+  difference anywhere in it fails the check.
 
 - **On the run path, `exp` and `ln` are four-multiply minimax polynomials**
   (T-130, author's budget): `exp_fast`, `log2_fast`, `pow_fast` and two

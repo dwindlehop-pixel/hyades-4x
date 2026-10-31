@@ -81,7 +81,7 @@ issue covering a staged plan whose stages are tracked inside it.
 | T-135 | [#43](https://github.com/dwindlehop-pixel/hyades-4x/issues/43) | The second Warfare card — Privateers |
 | T-134 | [#44](https://github.com/dwindlehop-pixel/hyades-4x/issues/44) | The Exchange at a spatial equilibrium; one holding per (empire, planet) |
 | T-131 | [#45](https://github.com/dwindlehop-pixel/hyades-4x/issues/45) | The Technology objective — a static rating of every Design, earned head-to-head per role |
-| T-128 | [#46](https://github.com/dwindlehop-pixel/hyades-4x/issues/46) | A native-against-wasm32 parity check in CI |
+| T-128 | [#46](https://github.com/dwindlehop-pixel/hyades-4x/issues/46) | ~~A native-against-wasm32 parity check in CI~~ — closed |
 | T-103 | [#47](https://github.com/dwindlehop-pixel/hyades-4x/issues/47) | The rest of the specs still carry their own experiment history |
 | T-104 | [#48](https://github.com/dwindlehop-pixel/hyades-4x/issues/48) | Three trees have specs and two of them cannot be measured |
 | T-107 | [#49](https://github.com/dwindlehop-pixel/hyades-4x/issues/49) | Population is not a factor of production — `Y` must read `P` |

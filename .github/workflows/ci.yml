@@ -149,8 +149,19 @@ jobs:
       - uses: actions/checkout@v5
       - name: Toolchain
         run: |
-          rustup toolchain install stable --profile minimal --no-self-update
+          rustup toolchain install stable --profile minimal --target wasm32-unknown-unknown --no-self-update
           rustup default stable
+      # T-128: the same digests computed natively and in wasm32 under node must
+      # be equal — every fair seat count's galaxy, a 3-seat 500-yr run and the
+      # two seeded fights (tools/parity). tests/determinism.rs runs one target
+      # and cannot see a divergence between targets (appendix §D.6). ~10 s of
+      # runs on each side.
+      - name: Native against wasm32 parity
+        run: |
+          cargo build --release -p hyades-parity --bin parity_native
+          cargo build --release -p hyades-parity --lib --target wasm32-unknown-unknown
+          ./target/release/parity_native > parity_native.txt
+          node tools/parity/compare.mjs target/wasm32-unknown-unknown/release/hyades_parity.wasm parity_native.txt
       # tests/balance.rs pins the tuned laser-vs-missile outcome: the golden
       # win table, the per-seed survivor counts, and the design properties
       # MIGRATION.md states. #[ignore]d so a plain `cargo test` stays fast, and
