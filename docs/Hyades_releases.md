@@ -51,11 +51,37 @@ census (its doc comment defines every line):
 
 | census line | what it samples |
 |---|---|
-| `card <id> <seed> <strength>` | each **defined card** (no `NotYetImplemented` write, landed on every even seat), played at the round-0 barrier against a pass arm on the same galaxy; `strength` is the mean log-ratio of the card's own tree's stock |
+| `card <id> <seed> <strength>` | each **defined card** (no `NotYetImplemented` write, landed on every even seat), played at the round-0 barrier against a pass arm on the same galaxy; `strength` is the mean log-ratio of the seat's **capability-years** (below) |
 | `kind <category> <name>` | each **kind** with at least one instance in a sampled game: a `LogEvent` variant raised (`system`), a `VehicleKind` standing (`entity`), a `CardEffect` variant that landed (`effect`) |
 
-Eight seeds, six seats, 300 worlds, 500 years; about 40 s in release on one
-core, bit-identical across runs. The census is stored in the release tag's
+It also prints a `table` line (the rating table's stamp) and `unrated` lines
+(hull-years of Designs the table does not rate); the rule below reads neither.
+
+Eight seeds, six seats, 300 worlds, 500 years, sampled yearly; about 70 s in
+release on one core, bit-identical across runs.
+
+**Strength is capability, for every card** (the author's ruling: *"Strength is
+a measure of fleet (hull, role, number) capability. … It is defined over the
+current active fleet, and changes as roles change. All cards will alter the
+measure of strength."*). It is Technology's stock (`Hyades_technology_tree.md`
+§4.2, §4.7), read from the rating table, whatever tree the card is in:
+
+| symbol | name | unit |
+|---|---|---|
+| `T_i` | capability-years, `∫ Q_i dt` from the round-0 barrier to the horizon, sampled yearly | kt·yr |
+| `Q_i` | `Σ_h m_h · γ(d_h, bed(role_h))` over seat `i`'s hulls at the sample | kt of anchor-equivalent |
+| `m_h` | the hull's dry mass, its mineral cost (R-O57) | kt |
+| `γ(d, b)` | Design `d`'s strength in bed `b`, ratio scale, anchor 1 (`data/design_ratings.tsv`) | ratio |
+| `bed(role)` | the bed rating the hull's active role; Reserve has none and counts zero (R-TECH10) | — |
+
+A card's strength on a seed is the mean over the seats that played it of
+`ln(T_i(card) / T_i(pass))`. A warship tasked as a freighter carries the
+freighter bed's `γ` for its Design, which is low; more hulls raise `Q_i`.
+
+*`OPEN`:* the Sentry role has no bed and reads the long-range bed, a
+placeholder; the missile Designs (Butte, Mesa) are not in the table yet and
+count zero, so the missile card's strength omits its sentries (its census
+shows them on the `unrated` line). The census is stored in the release tag's
 annotation, so the next batch compares against it.
 
 **The rule** (`scripts/next_release.sh`), against the previous release
@@ -72,10 +98,8 @@ Adding code that no sampled game reaches changes nothing: a system counts once
 an instance of it shows up in the census. The first release has no
 predecessor, so every card is new and it comes out **`v001.000.000`**.
 
-*`OPEN`:* the large-swing threshold, `ln 1.25` (a card 25% stronger or weaker
-on its own tree's stock) at 2 standard errors, is a placeholder; so is
-Technology's strength, which averages the Expansion and Growth ratios until
-T-131 gives the tree a stock.
+The large-swing threshold, `ln 1.25` (a card 25% more or less capability) at 2
+standard errors, is **ratified** (the author: *"Threshold is fine."*).
 
 **Release branches.** Each major release is its own branch, `release/vMMM`,
 started at the batch's last commit of `main`. Pull requests merge to `main`
@@ -119,3 +143,12 @@ stale. Regenerating the table is what clears a refusal.
 
 The engine never reads a stamped table: capability is a measurement, and no
 autopilot decision may consult it (`Hyades_technology_tree.md` §4.10).
+
+**The launch census reads the table and does not refuse it**, because the
+census is what assigns the release a stamp would be checked against; it
+prints the stamp on its `table` line instead. *`OPEN`:* when the table is
+regenerated. *Recommend:* the release workflow regenerates it on every minor
+or major release and stores it with the tag, since a minor release is by
+definition one a stamped table does not survive; not built, because
+`examples/design_rating` costs about 7.5 minutes and the regenerated table
+would still have to reach `main`.

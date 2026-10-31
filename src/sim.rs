@@ -1051,6 +1051,23 @@ pub enum Class {
 }
 
 impl Class {
+    /// Every class, in declaration order — what a reader of the presentation's
+    /// `design` names looks a name up in.
+    pub const ALL: [Class; 12] = [
+        Class::Meadow,
+        Class::Spur,
+        Class::Tor,
+        Class::Cairn,
+        Class::Delta,
+        Class::Range,
+        Class::Scarp,
+        Class::Ford,
+        Class::Strait,
+        Class::Butte,
+        Class::Mesa,
+        Class::Unnamed,
+    ];
+
     /// The Design's name, as the docs write it (`Hyades_vehicle_roles.md`
     /// §7.1, R-O42b) — what the presentation labels a hull with.
     pub fn name(self) -> &'static str {

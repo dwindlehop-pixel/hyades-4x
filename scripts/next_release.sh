@@ -20,7 +20,7 @@
 # bugfix  otherwise
 set -euo pipefail
 prev_tag=$1 prev_notes=$2 census=$3 out=$4
-SWING_LN=0.223144 # ln(1.25): a card 25% stronger or weaker on its own tree's stock
+SWING_LN=0.223144 # ln(1.25): a card that moves capability-years 25% either way
 
 prev=$(mktemp)
 if [ -n "$prev_tag" ]; then grep -E '^(card|kind) ' "$prev_notes" >"$prev" || true; fi

@@ -406,7 +406,9 @@ per pair and each non-combat bed's horizon are placeholders.
 
 ### 4.5 `RATIFIED` — fleet size follows hull size, 10 to 1,000 a side
 
-**4.5.1 `OPEN` — R-TECH11: sizes set by equal mineral spend.** *Recommend:*
+**4.5.1 R-TECH11: sizes set by equal mineral spend — the principle is
+`RATIFIED`, the budget `B` is `OPEN`.** The author: *"It is equivalent mineral
+cost on each side."* *Recommend* for `B`:
 `N_d = round(B / m_d)` with `B` = ten General hulls' price. On the shipped ladder
 (1 : 1/10 : 1/50) that fields **10 General Systems, 12 General Contact, 13
 General Offensive, 120–132 Medium/Rapid and 654–658 Limited** hulls — inside the
@@ -490,6 +492,11 @@ alternatives, and why not:
   `γ`. Volume is Production's stock (trees §2.3.4) for exactly the reason it is
   wrong here.
 
+The launch census (`Hyades_releases.md` §2) uses this weight as a placeholder,
+because the author's ruling that every card's strength is capability — *"More
+ships is better capability than fewer"* — needs some weight now; the ruling is
+met by both count and mass, so it does not settle this choice.
+
 Consequence, stated so it is not mistaken for a defect: `Q_i` is fleet mass times
 a mass-weighted mean strength, so building more hulls raises it. That is
 Production's axis appearing in Technology's stock. It does not mis-cost a card —
@@ -505,8 +512,10 @@ at that time. Consequence, stated so it is not mistaken for a defect: a
 Doctrine write that retasks hulls toward the roles their Designs rate highest
 raises `Q_i` without building anything. Under this ruling that is capability —
 a fleet used for what it is good at — and not a metric farm. **Open inside it:**
-the strength of `Reserve` (a standing mission that ended; no bed rates it) —
-*recommend* zero, since an idle hull does no role's work. Scrapped hulls are not
+the strength of `Reserve` (a standing mission that ended; no bed rates it) is
+**zero** — the author defines strength *"over the current active fleet"*, and
+the launch census (`Hyades_releases.md` §2) reads it so. The Sentry role has no
+bed yet and the census reads it on the long-range bed, a placeholder. Scrapped hulls are not
 owned and do not count. *(Superseded recommendation `c(d) = max_r γ(d, r)`:
 appendix §D.18.)*
 
@@ -673,7 +682,8 @@ the measurement into the target (§4.10).
 | R-TECH6 | one virtual draw per pair, to start (§4.6.2) |
 | R-TECH7 | counter-graph intransitivity is accepted; every regeneration reports cyclic triads and the largest residual, and is re-evaluated against the counter-graph then in force (§4.6.3) |
 | R-TECH8 | the rating is positive, on the ratio scale, anchor at 1 (§4.7.1) |
-| R-TECH10 | a hull carries its **active** role's strength each year (§4.7.3) |
+| R-TECH10 | a hull carries its **active** role's strength each year; Reserve counts zero (§4.7.3) |
+| R-TECH11 (principle) | rating beds field equal mineral spend per side; `B` stays open (§4.5.1) |
 | R-TECH13 | every role has a bed (§4.4.3) |
 | R-TECH16 | a bed forces the role (§4.4.4) |
 | R-TECH21 | Barrow's scale is loose guidance for this tree and Kardashev's for Production; **card tiers are an instrument of the counter-graph, not of a civilization scale** (§7.2) |
@@ -697,7 +707,7 @@ the measurement into the target (§4.10).
 | [R-TECH2](https://github.com/dwindlehop-pixel/hyades-4x/issues/307) | does capability saturate on the bed? | blocked on R-TECH1 |
 | [R-TECH5](https://github.com/dwindlehop-pixel/hyades-4x/issues/308) | fit Bradley–Terry by maximum likelihood on the Elo scale, not sequential updates — *recommended* | author |
 | [R-TECH9](https://github.com/dwindlehop-pixel/hyades-4x/issues/309) | weight hulls by dry mass, not count or volume — *recommended*; the author decides on the ratio-scale table, which may already carry mass or volume | author |
-| [R-TECH11](https://github.com/dwindlehop-pixel/hyades-4x/issues/310) | equal-spend budget `B` = ten General hulls — *recommended* | author |
+| [R-TECH11](https://github.com/dwindlehop-pixel/hyades-4x/issues/310) | equal spend per side is **ratified**; the budget `B` = ten General hulls — *recommended* | author |
 | [R-TECH12](https://github.com/dwindlehop-pixel/hyades-4x/issues/311) | `D_long`, and a closing long-range bed | a ranged family or beam falloff, then a sweep |
 | ~~R-TECH14~~ | ~~combat beds tie every armed Design~~ — **resolved by T-132**, warfare §8.18 | — |
 | ~~R-TECH15~~ | ~~the table's storage and staleness stamp~~ — **ratified (#312)**: stamped with the release, `Hyades_releases.md`; §4.10 | — |
