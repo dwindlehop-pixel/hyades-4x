@@ -594,9 +594,12 @@ minor differs from the current release, or that carries no release stamp
 (`Hyades_releases.md` §2). The engine does not read it: capability is a
 measurement, and no autopilot decision may consult it.
 
+**Regeneration** is a workflow (the author's ruling): after a minor or major
+release, `.github/workflows/ratings.yml` measures the table at that release and
+opens a pull request with it (`Hyades_releases.md` §3).
+
 **State:** the table on `main` is stamped with commit `52fc4f2`, which predates
-the first release, so a reader refuses it until it is regenerated; no reader
-exists yet (T-131).
+the first release, until the workflow's first run lands.
 
 **Cost:** the six-Design pool over all seven beds, both seatings, is 1,680
 matches for eight seeds and **7.5 min** on one core (appendix §D.18); the

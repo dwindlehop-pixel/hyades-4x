@@ -1,0 +1,119 @@
+name: Design ratings
+
+# Regenerates the Technology tree's Design rating table when a release changes
+# a system (docs/Hyades_releases.md §3): the author's ruling, "if a minor
+# release is detected then the Design rating must be regenerated. This is a
+# separate optional workflow that creates a commit."
+#
+# It runs after every Release run and does nothing unless the newest release is
+# minor or major (a stamped table survives a bugfix release and no other). It
+# measures the table at the release's own commit, stamps it with the release,
+# commits it on `ratings/<release>` and opens a pull request carrying the
+# intransitivity report, which a regeneration is not complete without someone
+# reading (R-TECH7). Run it by hand to regenerate for a given release.
+on:
+  workflow_run:
+    workflows: [Release]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      release:
+        description: "Release to measure at (vMMM.mmm.bbb); empty for the newest"
+        required: false
+        default: ""
+
+concurrency:
+  group: ratings
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  pull-requests: write
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -D warnings
+  SEEDS: 1,7,42,31337,2,3,5,11
+
+jobs:
+  ratings:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Release and level
+        id: pick
+        env:
+          ASKED: ${{ github.event.inputs.release }}
+        run: |
+          say() { echo "$1"; echo "::notice title=Design ratings::$1"; echo "$1" >> "$GITHUB_STEP_SUMMARY"; }
+          tag=${ASKED:-$(git tag -l 'v[0-9][0-9][0-9].[0-9][0-9][0-9].[0-9][0-9][0-9]' --sort=-v:refname | head -n1)}
+          [ -n "$tag" ] || { say "Nothing to regenerate: no release yet."; echo "skip=true" >> "$GITHUB_OUTPUT"; exit 0; }
+          level=$(git tag -l --format='%(contents:subject)' "$tag" | sed -n 's/.*(\(major\|minor\|bugfix\)).*/\1/p')
+          if [ -z "$ASKED" ] && [ "$level" = bugfix ]; then
+            say "Nothing to regenerate: $tag is a bugfix release, and a stamped table survives one."
+            echo "skip=true" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          if git ls-remote --exit-code --heads origin "ratings/$tag" > /dev/null; then
+            say "Nothing to regenerate: ratings/$tag already exists."
+            echo "skip=true" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "level=$level" >> "$GITHUB_OUTPUT"
+          echo "regenerating at $tag ($level)"
+      - name: Toolchain
+        if: steps.pick.outputs.skip != 'true'
+        run: |
+          rustup toolchain install stable --profile minimal --no-self-update
+          rustup default stable
+      - name: Rate every Design at the release
+        if: steps.pick.outputs.skip != 'true'
+        env:
+          TAG: ${{ steps.pick.outputs.tag }}
+        run: |
+          git worktree add -q "$RUNNER_TEMP/at" "$TAG"
+          (cd "$RUNNER_TEMP/at" && cargo run --release --example design_rating -- all "$SEEDS") > "$RUNNER_TEMP/raw"
+          scripts/rate_designs.sh "$TAG" "$RUNNER_TEMP/raw"
+          grep -c '^RATING' "$RUNNER_TEMP/raw"
+      - name: Commit and open a pull request
+        if: steps.pick.outputs.skip != 'true'
+        env:
+          TAG: ${{ steps.pick.outputs.tag }}
+          LEVEL: ${{ steps.pick.outputs.level }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          branch="ratings/$TAG"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -q -b "$branch"
+          git add data/design_ratings.tsv data/design_rating_matches.tsv
+          if git diff --cached --quiet; then
+            msg="Regenerated at $TAG; the table did not change."
+            echo "::notice title=Design ratings::$msg"; echo "$msg" >> "$GITHUB_STEP_SUMMARY"; exit 0
+          fi
+          git commit -q -m "Design ratings regenerated at $TAG ($LEVEL release)" \
+            -m "examples/design_rating all $SEEDS, measured at $TAG and stamped with it (R-TECH15)."
+          git push -q origin "$branch"
+          {
+            echo "The Design rating table regenerated at **$TAG** (a $LEVEL release), measured at that release's commit by \`examples/design_rating all $SEEDS\` and stamped with it (\`docs/Hyades_releases.md\` §3)."
+            echo
+            echo "**Read the intransitivity report before merging** (R-TECH7, \`Hyades_technology_tree.md\` §4.6.3): a regeneration is not complete until someone has checked it against the counter-graph in force."
+            echo
+            echo '```'
+            grep '^# INTRANSITIVITY' data/design_ratings.tsv | sed 's/^# //'
+            echo '```'
+            echo
+            echo "The launch census reads this table, so the release after this merges measures card strength against the new ratings."
+          } > "$RUNNER_TEMP/body"
+          # Opening a pull request needs the repository setting that lets Actions
+          # create one; without it the commit is still pushed and named here.
+          if url=$(gh pr create --base main --head "$branch" --title "Design ratings at $TAG" --body-file "$RUNNER_TEMP/body"); then
+            msg="Regenerated at $TAG: $url"
+          else
+            msg="Regenerated at $TAG on $branch; open a pull request at $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/compare/$branch"
+          fi
+          echo "::notice title=Design ratings::$msg"; echo "$msg" >> "$GITHUB_STEP_SUMMARY"
