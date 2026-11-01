@@ -44,7 +44,7 @@ agent chooses a release number, and no step takes one as input.
 **When.** `.github/workflows/release.yml` runs once a day (06:00 UTC) and on
 demand, never per commit. It takes the newest commit of `main` whose CI run
 passed, and releases the batch of commits since the last release tag. With no
-new commits it does nothing.
+new commits it releases nothing and says so on the run page ("Nothing to release: …"), so a green run is not mistaken for a release.
 
 **The launch test**, `examples/launch_census`, samples games and prints a
 census (its doc comment defines every line):
@@ -146,9 +146,15 @@ autopilot decision may consult it (`Hyades_technology_tree.md` §4.10).
 
 **The launch census reads the table and does not refuse it**, because the
 census is what assigns the release a stamp would be checked against; it
-prints the stamp on its `table` line instead. *`OPEN`:* when the table is
-regenerated. *Recommend:* the release workflow regenerates it on every minor
-or major release and stores it with the tag, since a minor release is by
-definition one a stamped table does not survive; not built, because
-`examples/design_rating` costs about 7.5 minutes and the regenerated table
-would still have to reach `main`.
+prints the stamp on its `table` line instead. **Regeneration is `RATIFIED`** (the author: *"if a minor release is detected
+then the Design rating must be regenerated. This is a separate optional
+workflow that creates a commit."*). `.github/workflows/ratings.yml` runs after
+every Release run. When the newest release is minor or major (a stamped table
+survives a bugfix release and no other, so a major release regenerates too), it
+runs `examples/design_rating all` at the release's own commit, writes both
+tables through `scripts/rate_designs.sh` stamped `release vMMM.mmm.bbb`,
+commits them on `ratings/vMMM.mmm.bbb`, and opens a pull request carrying the
+intransitivity report, which someone reads before merging (R-TECH7). It can also
+be run by hand for a named release. The commit reaches `main` only through that
+pull request, so the release after it measures card strength against the new
+table.

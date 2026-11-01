@@ -66,8 +66,11 @@ T-131), written from `examples/design_rating all <seeds>`. The first line of
 measurement of that engine and no other**, so read the stamp before the numbers.
 Since R-TECH15 the stamp is a release (`release vMMM.mmm.bbb`,
 `docs/Hyades_releases.md`), and a reader refuses a table from another major or
-minor release. The table checked in now carries commit `52fc4f2`, from before
-the first release, so a reader refuses it until it is regenerated.
+minor release. Both files are written by `scripts/rate_designs.sh` from one
+`design_rating` run, and `.github/workflows/ratings.yml` regenerates them after
+every minor or major release. The table checked in now carries commit
+`52fc4f2`, from before the first release, until that workflow's first run
+lands.
 
 `design_rating_matches.tsv` is the raw record — **one row per match**, every
 pair on every seed with the seats swapped — from which every rating and interval

@@ -120,12 +120,17 @@ fn galaxy_config(seed: u64) -> GalaxyConfig {
     GalaxyConfig::new(2, seed)
 }
 
+/// `B`, each fleet's spend: ten General Systems hulls' price (R-TECH11).
+fn spend_kt() -> f64 {
+    10.0 * hull_dry_mass(HullType::GeneralSystems, &SimConfig::new(0)).kilotons()
+}
+
 /// One match: Design `a` on seat 0 against `b` on seat 1. Returns each side's
 /// task score.
 fn play(bed: Bed, seed: u64, a: usize, b: usize) -> [f64; 2] {
     let g = galaxy_config(seed);
     let cfg = SimConfig::new(seed);
-    let spend = 10.0 * hull_dry_mass(HullType::GeneralSystems, &cfg).kilotons();
+    let spend = spend_kt();
     let homes: Vec<Vec3> = {
         let probe = Galaxy::generate(g).unwrap();
         probe.homeworlds.iter().map(|&h| probe.planets[h.0 as usize].position).collect()
@@ -442,6 +447,9 @@ fn main() {
         .nth(2)
         .map(|v| v.split(',').filter_map(|s| s.trim().parse().ok()).collect())
         .unwrap_or_else(|| vec![1, 7, 42, 31337]);
+    // The bed half of the table's stamp; `scripts/rate_designs.sh` adds the release.
+    let list: Vec<String> = seeds.iter().map(u64::to_string).collect();
+    println!("STAMP\tseeds {}, both seatings, spend 10 General Systems hulls ({:.2} kt)", list.join(","), spend_kt());
     for bed in Bed::ALL {
         if which == "all" || which == bed.name() {
             rate(bed, &seeds);
