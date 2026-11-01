@@ -44,7 +44,7 @@ agent chooses a release number, and no step takes one as input.
 **When.** `.github/workflows/release.yml` runs once a day (06:00 UTC) and on
 demand, never per commit. It takes the newest commit of `main` whose CI run
 passed, and releases the batch of commits since the last release tag. With no
-new commits it does nothing.
+new commits it releases nothing and says so on the run page ("Nothing to release: …"), so a green run is not mistaken for a release.
 
 **The launch test**, `examples/launch_census`, samples games and prints a
 census (its doc comment defines every line):
