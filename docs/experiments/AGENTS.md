@@ -44,7 +44,7 @@ docs/experiments/
   B-politics-trade.md        §B — Politics, Trade and Intelligence
   C-measurement-artifacts.md §C — the seven artifact shapes, collected
   D-mechanisms/              §D — mechanisms from T-122 onward, one file per subject
-    cards.md  combat.md  exchange-and-freight.md  galaxy-and-color.md
+    cards.md  combat.md  development.md  exchange-and-freight.md  galaxy-and-color.md
     interface.md  performance-and-determinism.md  sessions.md
     spread-between-empires.md  supers-and-forging.md
 ```

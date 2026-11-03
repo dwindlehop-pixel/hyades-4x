@@ -129,7 +129,7 @@ the issue.
 | R-IND9 | [#196](https://github.com/dwindlehop-pixel/hyades-4x/issues/196) | The extraction tail past N(S): flat, or a shallow seam at floor grade? |
 | R-IND19 | [#197](https://github.com/dwindlehop-pixel/hyades-4x/issues/197) | Rewrite or annotate §4.3's ε·S·W formula (the engine already uses W/N) |
 | R-O90 | [#198](https://github.com/dwindlehop-pixel/hyades-4x/issues/198) | One freighter hold buys exactly one infrastructure whole Band: make it deliberate or remove the cliff? |
-| R-IND22 | [#199](https://github.com/dwindlehop-pixel/hyades-4x/issues/199) | The development profitability test's three unknowns |
+| R-IND22 | [#199](https://github.com/dwindlehop-pixel/hyades-4x/issues/199) | ~~The development profitability test's three unknowns~~ — resolved (T-108) |
 | R-IND18 | [#200](https://github.com/dwindlehop-pixel/hyades-4x/issues/200) | Magnitudes for the composed extraction law (ε, β, VEINS_PER_BAND, cap_ext, half_ext) |
 | R-IND12 | [#201](https://github.com/dwindlehop-pixel/hyades-4x/issues/201) | How much a colonizer carries (model settled, magnitudes open) |
 | R-IND13 | [#202](https://github.com/dwindlehop-pixel/hyades-4x/issues/202) | The works-value whole Band I |

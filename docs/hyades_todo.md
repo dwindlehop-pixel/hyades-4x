@@ -84,8 +84,8 @@ issue covering a staged plan whose stages are tracked inside it.
 | T-128 | [#46](https://github.com/dwindlehop-pixel/hyades-4x/issues/46) | ~~A native-against-wasm32 parity check in CI~~ — closed |
 | T-103 | [#47](https://github.com/dwindlehop-pixel/hyades-4x/issues/47) | The rest of the specs still carry their own experiment history |
 | T-104 | [#48](https://github.com/dwindlehop-pixel/hyades-4x/issues/48) | Three trees have specs and two of them cannot be measured |
-| T-107 | [#49](https://github.com/dwindlehop-pixel/hyades-4x/issues/49) | Population is not a factor of production — `Y` must read `P` |
-| T-108 | [#50](https://github.com/dwindlehop-pixel/hyades-4x/issues/50) | Development is a profitability test — R-IND22 |
+| T-107 | [#49](https://github.com/dwindlehop-pixel/hyades-4x/issues/49) | ~~Population is not a factor of production — `Y` must read `P`~~ — closed |
+| T-108 | [#50](https://github.com/dwindlehop-pixel/hyades-4x/issues/50) | ~~Development is a profitability test — R-IND22~~ — closed |
 | T-95 | [#51](https://github.com/dwindlehop-pixel/hyades-4x/issues/51) | `cycle_years` is doing two jobs, and only one of them is integration |
 | T-97 | [#52](https://github.com/dwindlehop-pixel/hyades-4x/issues/52) | `drive_volume_fraction` is a Design quantity in a config field |
 | T-92 | [#53](https://github.com/dwindlehop-pixel/hyades-4x/issues/53) | A center's bank is 98.3% its own single-colored planet |

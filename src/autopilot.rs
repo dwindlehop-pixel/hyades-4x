@@ -741,6 +741,24 @@ pub struct Doctrine {
     /// identity; the test above is what will say so.
     pub reinvest_bias: f64,
 
+    /// **The development test's forecast horizon, in reference cycles**
+    /// (T-108, R-IND22, `Hyades_industry.md` §1.8). A center deepens only if
+    /// the next whole Band does not lower its worked stock `I · u` at the
+    /// population the closed-form logistic forecasts this many
+    /// `rate_reference_years` ahead. `Some(0.0)` reads today's people,
+    /// `Some(f64::INFINITY)` reads `K` and is the ratified default (the
+    /// author's ruling, 2026-11-03): a step is refused only if the world could
+    /// never work it.
+    ///
+    /// `None` switches the test off, so the deepen branch ignores staffing as
+    /// it did before T-108. That setting exists for the sweep that ratified
+    /// the test, not for play.
+    ///
+    /// **Why there is no threshold above zero:** a sweep over a tolerance `k`
+    /// (develop when the step's worked share is at least `1/k`) lost worked
+    /// output at every finite `k`. See R-IND22 (#199).
+    pub develop_forecast_cycles: Option<f64>,
+
     // --- Ranking (autopilot-doc §3) ---
     pub rank: RankWeights,
 }
@@ -822,6 +840,8 @@ impl Default for Doctrine {
             // knob wherever it does anything at all, and falls off a cliff above
             // ~0.98; see the field doc for the identity that makes it so.
             reinvest_bias: 0.5,
+            // `K` — the author's ruling of 2026-11-03 (R-IND22).
+            develop_forecast_cycles: Some(f64::INFINITY),
             rank: RankWeights::default(),
         }
     }
@@ -1050,6 +1070,12 @@ pub struct ProductionContext {
     /// `stockpile_total >= infra_cost` any more: a center with plenty of ore and
     /// none of the color the bill names cannot buy the whole Band.
     pub infra_bill: [Price; 3],
+    /// **The fraction of the next whole Band this center's people will work**
+    /// (T-108): the worked stock the step adds, at the population forecast
+    /// [`Doctrine::develop_forecast_cycles`] ahead, over the step's width. `1.0` for a center that would be fully staffed after
+    /// the step, and below zero where deepening an understaffed center lowers
+    /// its worked stock (`P_req` grows faster than the stock within a Band).
+    pub step_return: f64,
     /// This center's bank, by color, in the same order — the other half of that
     /// comparison.
     pub stockpile_by_color: [Price; 3],
@@ -1454,7 +1480,11 @@ impl Autopilot for BaselineAutopilot {
         // nothing — and committing it every berth, every two years, was a
         // decision storm (appendix §D.40).
         let has_next_band = ctx.infra_bill.iter().any(|b| *b > Price::ZERO);
-        let deepen_possible = ctx.infra < ctx.k_potential - 1e-9 && has_next_band;
+        // **Development is a profitability test** (T-108, R-IND22): a step
+        // that would lower the worked stock at the forecast population is
+        // refused.
+        let profitable = doctrine.develop_forecast_cycles.is_none() || ctx.step_return >= 0.0;
+        let deepen_possible = ctx.infra < ctx.k_potential - 1e-9 && has_next_band && profitable;
         // The epsilon is a price too — the whole comparison is on one ladder.
         let eps = Price::new(1e-9);
         // **Every color, not the total** (T-73). `works_bill` in `sim` produces
@@ -2561,6 +2591,7 @@ mod tests {
             // `a_color_poor_center_cannot_buy_the_whole_band` covers that
             // deliberately.
             infra_bill: [Price::new((infra + 1.0) / 3.0); 3],
+            step_return: 1.0,
             stockpile_by_color: [Price::new(stockpile / 3.0); 3],
             colonizer_cost: Price::new(1.0),
             general_colonizer_cost: Price::new(10.0),
@@ -3256,6 +3287,24 @@ mod tests {
         let mut ctx = prod_ctx(BandTier::II, 2.0, 5.0);
         ctx.k_potential = 2.86;
         assert_eq!(ap.production_choice(&doctrine, &ctx, &[]), BuildOrder::UpgradeInfrastructure);
+    }
+
+    #[test]
+    fn a_step_that_loses_worked_stock_is_refused_only_when_the_test_is_on() {
+        // T-108: the same center and bill. A step its people would staff a
+        // quarter of still adds worked stock and is taken; one that lowers the
+        // worked stock is refused, unless the test is off.
+        let ap = BaselineAutopilot::default();
+        let mut ctx = prod_ctx(BandTier::II, 2.0, 5.0);
+        ctx.k_potential = 2.86;
+        let on = Doctrine::default();
+        let off = Doctrine { develop_forecast_cycles: None, ..Doctrine::default() };
+        ctx.step_return = 0.25;
+        assert_eq!(ap.production_choice(&on, &ctx, &[]), BuildOrder::UpgradeInfrastructure);
+        ctx.step_return = -0.1;
+        assert_ne!(ap.production_choice(&on, &ctx, &[]), BuildOrder::UpgradeInfrastructure);
+        assert_eq!(ap.production_choice(&off, &ctx, &[]), BuildOrder::UpgradeInfrastructure);
+        assert_eq!(on.develop_forecast_cycles, Some(f64::INFINITY), "the ratified test reads K");
     }
 
     #[test]

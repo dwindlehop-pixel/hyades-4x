@@ -129,6 +129,10 @@ an identifier to its file.
 - **§D.52** — Income per Band III center, and why a center short one color stays short
 - **§D.57** — The spread of colony-years between empires on random ground
 
+### [`D-mechanisms/development.md`](D-mechanisms/development.md)
+
+- **§D.66** (with subsections §D.66.1–§D.66.3) — The development test: a tolerance sweep, a forecast sweep, and a census (T-108, R-IND22)
+
 ### [`D-mechanisms/interface.md`](D-mechanisms/interface.md)
 
 - **§D.58** (with subsections §D.58.1–§D.58.8) — The replay viewer: frames, sizes, the palette's ink, and the GPU against the CPU
