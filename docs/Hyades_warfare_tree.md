@@ -2884,8 +2884,15 @@ them** (appendix §D.24).
 
 **8.22.4 `OPEN`.** R-WAR44 (every missile magnitude), R-WAR48 (whether a
 sentry withdraws from its own center). The sweep of the sentry ratio
-and its thresholds is T-140. Whether the spent-round debris store should be
-cut is T-141.
+and its thresholds is T-140.
+
+**8.22.5 Decided — spent rounds stay in the ledger (T-141, the author's ruling
+of 2026-11-03).** Every round, whether it hit, was intercepted or missed, ends in
+`Simulation::ordnance_debris`, one kiloton total with no position, read only by
+the mass ledger (`MassLedger::ordnance_spent`). It is kept as it is. Design law
+#11 has no exception for expended ordnance, and the store costs no events and no
+decisions. Folding debris into a wreck or slag on the board was declined, which
+would have given debris a place as game content.
 
 ---
 

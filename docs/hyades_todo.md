@@ -72,7 +72,7 @@ issue covering a staged plan whose stages are tracked inside it.
 | T-145 | [#34](https://github.com/dwindlehop-pixel/hyades-4x/issues/34) | Raise the yomi of super and apex forging |
 | T-144 | [#35](https://github.com/dwindlehop-pixel/hyades-4x/issues/35) | ~~Decisions without a cadence: a short-circuit tree, conditioned on events~~ — closed; three timed re-asks remain in [#360](https://github.com/dwindlehop-pixel/hyades-4x/issues/360) |
 | T-143 | [#36](https://github.com/dwindlehop-pixel/hyades-4x/issues/36) | Every empire forges every super — make forging a forge's purpose, then trade supers |
-| T-141 | [#37](https://github.com/dwindlehop-pixel/hyades-4x/issues/37) | Decide whether spent-round debris should be cut |
+| T-141 | [#37](https://github.com/dwindlehop-pixel/hyades-4x/issues/37) | ~~Decide whether spent-round debris should be cut~~ — closed (kept) |
 | T-140 | [#38](https://github.com/dwindlehop-pixel/hyades-4x/issues/38) | Sweep the sentry ratio and its thresholds |
 | T-139 | [#39](https://github.com/dwindlehop-pixel/hyades-4x/issues/39) | Supply lines, and the first missile Design |
 | T-138 | [#40](https://github.com/dwindlehop-pixel/hyades-4x/issues/40) | Supers, apex and the refined Exchange; production priced |
