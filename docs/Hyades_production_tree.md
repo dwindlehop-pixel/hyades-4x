@@ -344,7 +344,9 @@ the join with Technology: synthesis makes *supers*, which are a Technology
 commodity.
 
 **7.2 Slag.** Wastage degrades to slag rather than vanishing (design law #11), and
-slag is not a bank entry yet. **R-O59 / T-03 — open.**
+slag is a per-planet store the mass ledger counts (T-03, closed). The tier-1 card
+that makes it refinable is **T-185 ([#366](https://github.com/dwindlehop-pixel/hyades-4x/issues/366)) — open**,
+through the card workflow (the author's ruling, 2026-11-03).
 
 **7.3 Captured infrastructure.** What an occupier gets when it takes a developed
 world. **R-IND8 — open**, and it is the join with Warfare.
@@ -379,7 +381,7 @@ world. **R-IND8 — open**, and it is the join with Warfare.
 |---|---|---|
 | [R-IND2](https://github.com/dwindlehop-pixel/hyades-4x/issues/192) | is Warding an employment share or a Design hardness coefficient? | a design pass; changes what Warfare can target |
 | [R-IND8](https://github.com/dwindlehop-pixel/hyades-4x/issues/195) | captured infrastructure | a design pass, with Warfare |
-| R-O59 / T-03 | slag as a bank entry | engine work |
+| R-O59 / T-185 | the slag-refining card: its colors, who may refine, its tree | card workflow ([#366](https://github.com/dwindlehop-pixel/hyades-4x/issues/366)) |
 | [R-PROD1](https://github.com/dwindlehop-pixel/hyades-4x/issues/256) | which `Works` fields each card tier writes | the dispersion constraint, then MC |
 | [R-PROD2](https://github.com/dwindlehop-pixel/hyades-4x/issues/257) | what a Production card may do to the hull ladder | a decision — probably "nothing" |
 | [R-PROD3](https://github.com/dwindlehop-pixel/hyades-4x/issues/258) | fleet-years' saturation point on the bed | one cheap measurement |
