@@ -886,7 +886,9 @@ board in the meantime rather than vanishing from the ledger.
 
 *Built:* synthesis leaves its loss as slag at the forge, in the same per-planet
 store scrapped and wrecked hulls already use, and the mass ledger counts it.
-Refinable slag (the tier-1 card) is not built (T-03).
+Refinable slag (the tier-1 card) is not built. It is T-185
+([#366](https://github.com/dwindlehop-pixel/hyades-4x/issues/366)), a card-workflow item, and T-03 is closed
+(the author's ruling, 2026-11-03).
 
 ### 9.4 Ordnance is mass; energy weapons are not (R-O60)
 

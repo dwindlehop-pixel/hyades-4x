@@ -97,7 +97,7 @@ issue covering a staged plan whose stages are tracked inside it.
 | T-78 … T-80 | [#59](https://github.com/dwindlehop-pixel/hyades-4x/issues/59) | The trees: tone, six objectives, card value — `Hyades_trees_and_card_value.md` |
 | T-67 … T-77 | [#60](https://github.com/dwindlehop-pixel/hyades-4x/issues/60) | The industrial layer — `Hyades_industry.md` |
 | T-02 | [#61](https://github.com/dwindlehop-pixel/hyades-4x/issues/61) | ~~Restore `examples/bench_hex_size.rs`, sweeping entity count~~ — closed |
-| T-03 | [#62](https://github.com/dwindlehop-pixel/hyades-4x/issues/62) | Slag as a bank entry — R-O59 |
+| T-03 | [#62](https://github.com/dwindlehop-pixel/hyades-4x/issues/62) | ~~Slag as a bank entry — R-O59~~ — closed; the card is T-185 |
 | T-04 | [#63](https://github.com/dwindlehop-pixel/hyades-4x/issues/63) | Magazine mass on ordnance families — R-O60 / R-XM6 |
 | T-05 | [#64](https://github.com/dwindlehop-pixel/hyades-4x/issues/64) | ~~`min_time_search` as a reachability-cone query — R-O31~~ — closed |
 | T-06 | [#65](https://github.com/dwindlehop-pixel/hyades-4x/issues/65) | ~~Split three long functions~~ — closed |
@@ -108,6 +108,7 @@ issue covering a staged plan whose stages are tracked inside it.
 
 | Code | Issue | Title |
 |---|---|---|
+| T-185 | [#366](https://github.com/dwindlehop-pixel/hyades-4x/issues/366) | The slag-refining card (R-O59's tier-1 card) |
 | T-142 | [#68](https://github.com/dwindlehop-pixel/hyades-4x/issues/68) | Revise the super names once Design is specified |
 | T-08 | [#69](https://github.com/dwindlehop-pixel/hyades-4x/issues/69) | `on_refit` retrofit realization — R-O47b / R-O55 |
 | T-09 | [#70](https://github.com/dwindlehop-pixel/hyades-4x/issues/70) | Throttle fraction on `Doctrine`; observe `a` from trajectory — R-O40 |
