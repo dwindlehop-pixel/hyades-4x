@@ -35,6 +35,11 @@
 //! infrastructure buy hulls, and a `k_high`-bound bed takes worlds earlier.
 //! Sweep it here, where the metric is the stock the decision actually moves.
 //!
+//! **`WY_DEVELOP` sweeps the development test's forecast horizon** (T-108,
+//! R-IND22): a comma-separated list of `off`, `inf` or a number of reference
+//! cycles, each an arm at the default `reinvest_bias`. It replaces the bias
+//! list when set. Without it every arm runs the shipped horizon.
+//!
 //! Run: `cargo run --release --example work_years -- [horizon] [bias...]`
 use hyades_engine::prelude::*;
 use std::io::Write;
@@ -68,6 +73,9 @@ const SAMPLE_YEARS: f64 = 50.0;
 
 struct Run {
     work_years: f64,
+    /// `∫ Σ I · u dt` — the stock the centers' people can work (T-107), so
+    /// a change that stops building idle stock is not scored as a loss for it.
+    worked_years: f64,
     colony_years: f64,
     final_works: f64,
     final_colonies: usize,
@@ -94,7 +102,7 @@ struct Run {
     events: u64,
 }
 
-fn run(seed: u64, horizon: f64, bias: f64) -> Run {
+fn run(seed: u64, horizon: f64, bias: f64, forecast: Option<f64>) -> Run {
     let galaxy = Galaxy::generate(GalaxyConfig::new(PLAYERS, seed)).unwrap();
     let mut cfg = SimConfig::new(seed);
     cfg.horizon_years = horizon;
@@ -118,14 +126,14 @@ fn run(seed: u64, horizon: f64, bias: f64) -> Run {
     // **Common random numbers**: the same seed drives the galaxy and the sim at
     // every bias, so the difference between two rows is the knob and not the
     // draw (`AGENTS.md` §2).
-    let doctrine = Doctrine { reinvest_bias: bias, ..Doctrine::default() };
+    let doctrine = Doctrine { reinvest_bias: bias, develop_forecast_cycles: forecast, ..Doctrine::default() };
     let autopilots: Vec<Box<dyn Autopilot>> =
         (0..PLAYERS).map(|_| Box::new(BaselineAutopilot::new(doctrine)) as Box<_>).collect();
     let mut sim = Simulation::new(galaxy, cfg, autopilots);
     let t0 = std::time::Instant::now();
 
-    let (mut work_years, mut colony_years) = (0.0f64, 0.0f64);
-    let (mut prev_t, mut prev_works, mut prev_col) = (0.0f64, 0.0f64, 0.0f64);
+    let (mut work_years, mut colony_years, mut worked_years) = (0.0f64, 0.0f64, 0.0f64);
+    let (mut prev_t, mut prev_works, mut prev_col, mut prev_worked) = (0.0f64, 0.0f64, 0.0f64, 0.0f64);
     let mut done = false;
     let mut next = SAMPLE_YEARS;
     while !done && next <= horizon {
@@ -143,8 +151,11 @@ fn run(seed: u64, horizon: f64, bias: f64) -> Run {
         }
         // Trapezoid: the stock is piecewise constant between builds, so either
         // rule is defensible; trapezoid is stated so the number is reproducible.
+        let worked: f64 = (0..PLAYERS).map(|p| sim.staffing_split(p).0).sum();
         let dt = sim.clock().min(next) - prev_t;
         work_years += 0.5 * (works + prev_works) * dt;
+        worked_years += 0.5 * (worked + prev_worked) * dt;
+        prev_worked = worked;
         colony_years += 0.5 * (colonies + prev_col) * dt;
         prev_t = sim.clock().min(next);
         prev_works = works;
@@ -158,6 +169,7 @@ fn run(seed: u64, horizon: f64, bias: f64) -> Run {
     let owned: Vec<_> = snap.planets.iter().filter(|p| p.owner.is_some()).collect();
     Run {
         work_years,
+        worked_years,
         colony_years,
         final_works: owned.iter().map(|p| p.works.kilotons()).sum(),
         final_colonies: owned.len(),
@@ -179,14 +191,32 @@ fn main() {
             v
         }
     };
+    // Each arm is a label, a bias and a `k`.
+    let arms: Vec<(String, f64, Option<f64>)> = match std::env::var("WY_DEVELOP") {
+        Ok(list) => list
+            .split(',')
+            .map(|a| a.trim())
+            .filter_map(|a| match a {
+                "off" => Some(None),
+                "inf" => Some(Some(f64::INFINITY)),
+                n => n.parse::<f64>().ok().map(Some),
+            })
+            .map(|k| {
+                let label = k.map_or("off".to_string(), |k| format!("H {k}"));
+                (label, Doctrine::default().reinvest_bias, k)
+            })
+            .collect(),
+        Err(_) => biases.iter().map(|&b| (format!("{b:.4}"), b, Doctrine::default().develop_forecast_cycles)).collect(),
+    };
 
     println!("work-years — Growth's objective, {PLAYERS} seats, {horizon:.0} yr, sampled every {SAMPLE_YEARS:.0} yr");
     println!("colony-years is carried alongside as a *side-effect* read, never the verdict\n");
     println!(
-        "{:>7}{:>6}{:>16}{:>16}{:>13}{:>11}{:>10}{:>9}{:>12}{:>10}",
-        "bias",
+        "{:>7}{:>6}{:>16}{:>16}{:>16}{:>13}{:>11}{:>10}{:>9}{:>12}{:>10}",
+        "arm",
         "seed",
         "work-years",
+        "worked-years",
         "colony-years",
         "final works",
         "colonies",
@@ -202,15 +232,16 @@ fn main() {
     // has far lower variance than either level (`AGENTS.md` §2), and the SE of
     // that difference is the only thing that says whether a row is a finding.
     let mut base: Option<Vec<f64>> = None;
-    for &bias in &biases {
+    for (label, bias, k) in &arms {
         let (mut w, mut c) = (0.0, 0.0);
         let mut per_seed: Vec<f64> = Vec::new();
         let bed = seeds();
         for seed in bed.iter().copied() {
-            let r = run(seed, horizon, bias);
+            let r = run(seed, horizon, *bias, *k);
             println!(
-                "{bias:>7.4}{seed:>6}{:>16.1}{:>16.1}{:>13.2}{:>11}{:>10}{:>9.1}{:>12}{:>10.0}",
+                "{label:>7}{seed:>6}{:>16.1}{:>16.1}{:>16.1}{:>13.2}{:>11}{:>10}{:>9.1}{:>12}{:>10.0}",
                 r.work_years,
+                r.worked_years,
                 r.colony_years,
                 r.final_works,
                 r.final_colonies,
@@ -225,7 +256,7 @@ fn main() {
             per_seed.push(r.work_years);
         }
         let n = bed.len() as f64;
-        print!("{bias:>7.4}{:>6}{:>16.1}{:>16.1}", "MEAN", w / n, c / n);
+        print!("{label:>7}{:>6}{:>16.1}{:>16.1}", "MEAN", w / n, c / n);
         match &base {
             None => base = Some(per_seed),
             Some(b) => {
@@ -239,7 +270,7 @@ fn main() {
                 let var = if d.len() > 1 { d.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / (n - 1.0) } else { 0.0 };
                 let se = (var / n).sqrt();
                 let verdict = if mean.abs() > 2.0 * se { "" } else { "  (inside 2 SE — not a finding)" };
-                print!("   work-years {mean:+.2}% ± {se:.2} vs bias {:.4}{verdict}", biases[0]);
+                print!("   work-years {mean:+.2}% ± {se:.2} vs {}{verdict}", arms[0].0);
             }
         }
         println!();

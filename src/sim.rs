@@ -1832,6 +1832,20 @@ pub fn role_hull_type(role: Role) -> HullType {
 /// This is the one runtime parameter the ladder takes. Everything else about it
 /// is the ratified `COST_LADDER`, carried on the `Qty<Cost>` type itself.
 #[inline]
+/// **`u = min(1, P / P_req(I))`** for a stock `I` and a population `P` — the
+/// staffing factor as a pure function, so a decision can price a stock it does
+/// not hold yet (T-108). `1.0` for an empty stock.
+fn staffing_of(infra: Price, pop: Kilotons, cfg: &SimConfig) -> f64 {
+    if infra <= Price::ZERO {
+        return 1.0;
+    }
+    let p_req = infra.mass_at_same_band_from(cost_anchor(cfg));
+    if p_req <= Kilotons::ZERO {
+        return 1.0;
+    }
+    (pop.kilotons() / p_req.kilotons()).clamp(0.0, 1.0)
+}
+
 fn cost_anchor(cfg: &SimConfig) -> f64 {
     cfg.general_vehicle_cost / units::COST_LADDER[1]
 }
@@ -7131,6 +7145,10 @@ impl Simulation {
             limited_min_level: self.config.limited_min_level,
             infra_cost: target_level,
             infra_bill,
+            step_return: self.step_return(
+                center,
+                doctrine.develop_forecast_cycles.unwrap_or(0.0) * self.config.rate_reference_years,
+            ),
             stockpile_by_color,
             colonizer_cost: hull_cost(HullType::MediumSystems, &self.config),
             general_colonizer_cost: hull_cost(general_hull, &self.config),
@@ -7365,15 +7383,65 @@ impl Simulation {
     /// mass at the stock's own Band reading rather than a new constant.
     pub fn staffing(&self, center: Entity) -> f64 {
         let Some(f) = self.world.factors.get(center) else { return 0.0 };
-        if f.infra <= Price::ZERO {
-            return 1.0;
-        }
         let p = self.world.population.get(center).copied().unwrap_or(Kilotons::ZERO);
-        let p_req = f.infra.mass_at_same_band_from(cost_anchor(&self.config));
-        if p_req <= Kilotons::ZERO {
+        staffing_of(f.infra, p, &self.config)
+    }
+
+    /// **The fraction of the next whole Band this center's people will work**
+    /// (T-108, `Hyades_industry.md` §1.8): `(W(I', P_f) − W(I, P_f)) / (I' − I)`,
+    /// with `W(I, P) = I · u(P / P_req(I))`, `I'` the stock one whole Band up,
+    /// and `P_f` the population **forecast** `horizon` years ahead on the
+    /// closed-form logistic toward `K` (the author's ruling of 2026-11-02:
+    /// the test reads future population, not today's). `horizon = 0` reads
+    /// today's people; `horizon = ∞` reads `K`, the population the world
+    /// converges to. `1.0` when staffing is off and at the top of the ladder.
+    ///
+    /// It reads the **worked stock**, the one input every output path takes
+    /// (`worked_infra`), rather than output itself: extraction and fabrication
+    /// are both monotone in it, so the sign and the zero are exact and the
+    /// magnitude is the step's staffed share.
+    pub fn step_return(&self, center: Entity, horizon: f64) -> f64 {
+        if !self.config.population_staffs_industry {
             return 1.0;
         }
-        (p.kilotons() / p_req.kilotons()).clamp(0.0, 1.0)
+        let Some(f) = self.world.factors.get(center) else { return 1.0 };
+        let now = f.infra;
+        let next = infra_price_at_step((infra_step_of(now, &self.config) + 1).min(infra_steps_to_top()), &self.config);
+        let width = (next - now).kilotons();
+        if width <= 0.0 {
+            return 1.0;
+        }
+        let p = self.population_forecast(center, horizon);
+        let worked = |i: Price| i.kilotons() * staffing_of(i, p, &self.config);
+        (worked(next) - worked(now)) / width
+    }
+
+    /// **This center's population `horizon` years ahead**, on the closed-form
+    /// logistic toward its carrying capacity — the same solution the growth
+    /// step applies, at the owner's `growth_rate` per reference cycle. Ignores
+    /// biomass, founding and fire, so it is a forecast and not a replay.
+    fn population_forecast(&self, center: Entity, horizon: f64) -> Kilotons {
+        let p = self.world.population.get(center).copied().unwrap_or(Kilotons::ZERO);
+        let k = self.capacity_of(center);
+        if horizon <= 0.0 || p <= Kilotons::ZERO {
+            return p;
+        }
+        if horizon.is_infinite() {
+            return k;
+        }
+        let r = self
+            .world
+            .owner
+            .get(center)
+            .and_then(|o| self.world.doctrine.get(self.player_entity[o.0 as usize]))
+            .map_or(0.0, |d| d.growth_rate)
+            / self.config.rate_reference_years.max(1e-12);
+        let (x, kk) = (p.kilotons(), k.kilotons());
+        let denom = x + (kk - x) * transcendental::exp(-r * horizon);
+        if denom <= 0.0 || !denom.is_finite() {
+            return k;
+        }
+        Kilotons::new((kk * x / denom).clamp(x.min(kk), x.max(kk)))
     }
 
     /// **The fabrication share of this center's infrastructure stock, kt** — the
@@ -11717,13 +11785,6 @@ impl Simulation {
     /// tests, censuses and the netcode digest — so it reads clearly rather than
     /// incrementally, and a full walk cannot drift out of step with the state
     /// the way a running total would.
-    /// **One player's tree stocks, for card valuation** (T-120).
-    ///
-    /// Returns `(colonies, infrastructure kt)`. Expansion's stock is the colony
-    /// count and Growth's interim stock is infrastructure in kilotons
-    /// (R-TREE3, until works exist) — and Warfare's is built from the first of
-    /// these across seats, since `W_i = C_i − Σ_j w_ij C_j` is a *difference*
-    /// and has no store of its own.
     /// **Where the unworked stock sits** (T-107/T-122), kt, as
     /// `(worked, idle_on_growing_worlds, idle_on_capped_worlds)`.
     ///
@@ -11753,6 +11814,13 @@ impl Simulation {
         (worked, idle_growing, idle_capped)
     }
 
+    /// **One player's tree stocks, for card valuation** (T-120).
+    ///
+    /// Returns `(colonies, infrastructure kt)`. Expansion's stock is the colony
+    /// count and Growth's interim stock is infrastructure in kilotons
+    /// (R-TREE3, until works exist) — and Warfare's is built from the first of
+    /// these across seats, since `W_i = C_i − Σ_j w_ij C_j` is a *difference*
+    /// and has no store of its own.
     pub fn tree_stock(&self, p: usize) -> (usize, f64) {
         let me = PlayerId(p as u32);
         let mut colonies = 0usize;
@@ -13030,6 +13098,41 @@ mod tests {
         );
 
         assert_eq!(sim.world.doctrine.get(sim.player_entity[0]).unwrap().growth_rate, before);
+    }
+
+    #[test]
+    fn a_step_returns_its_staffed_share_and_deepening_the_unstaffed_loses_stock() {
+        // T-108. With the next Band's people the whole step is worked. At
+        // exactly the people today's stock needs, the step raises `P_req`
+        // faster than the stock (`∝ I^1.5` within a Band), so the worked stock
+        // *falls*: the return is negative, which is the case the test exists
+        // to refuse. Off, staffing is not a factor and every step returns 1.
+        let mut cfg = test_cfg(1);
+        cfg.population_staffs_industry = true;
+        let mut sim = Simulation::with_baseline(test_galaxy(3, 1), cfg);
+        let home = sim.world.player_info.get(sim.player_entity[0]).unwrap().home;
+        // At `t = 0` a homeworld stands at 1 kt of stock with 1,076 kt of
+        // people; the next whole Band is 20 kt and needs 2,828 kt, so about a
+        // third of it would be worked.
+        let f = *sim.world.factors.get(home).unwrap();
+        let next = infra_price_at_step(infra_step_of(f.infra, &sim.config) + 1, &sim.config);
+        let r_start = sim.step_return(home, 0.0);
+        assert!(r_start > 0.0 && r_start < 1.0, "a homeworld can staff part of its next Band, got {r_start}");
+        sim.world.population.insert(home, next.mass_at_same_band_from(cost_anchor(&sim.config)));
+        let r_rich = sim.step_return(home, 0.0);
+        assert!((r_rich - 1.0).abs() < 1e-9, "with the next Band's people the whole step is worked, got {r_rich}");
+
+        let f = *sim.world.factors.get(home).unwrap();
+        let p = f.infra.mass_at_same_band_from(cost_anchor(&sim.config));
+        sim.world.population.insert(home, p);
+        let r_exact = sim.step_return(home, 0.0);
+        assert!(r_exact < 0.0, "deepening an exactly staffed center lowers its worked stock, got {r_exact}");
+        sim.world.population.insert(home, p * 2.0);
+        let r_double = sim.step_return(home, 0.0);
+        assert!(r_exact < r_double && r_double <= 1.0, "more people, more of the step worked: {r_exact} -> {r_double}");
+
+        sim.config.population_staffs_industry = false;
+        assert_eq!(sim.step_return(home, 0.0), 1.0);
     }
 
     #[test]

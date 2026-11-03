@@ -531,12 +531,30 @@ autopilot prefers it.
 | `b_c` | the whole Band's bill in color `c` | kt | `ProductionContext::infra_bill`, a **conjunction** over C/M/Y |
 | `P` | the center's population | kt | `World::population` (`src/sim.rs:1429`) — **not read by any production path today** |
 | `Y(I, P)` | the center's output at that stock and that population | kt/yr | §4.3 extraction plus §3.2 fabrication |
-| `τ_pay` | payback horizon the policy will accept | yr | **placeholder**, R-IND22 |
+| `P_f` | the population the step is scored at: `K`, the population the world converges to (`Doctrine::develop_forecast_cycles = ∞`) | kt | **ratified** (R-IND22, 2026-11-03) |
+| `W(I, P)` | the worked stock, `I · u(P / P_req(I))` | kt | `Sim::step_return` |
+
+**Ratified (R-IND22, the author's rulings of 2026-11-01 to 2026-11-03), landed
+at T-108:**
 
 ```text
-develop  iff   ΔI / (Y(I + ΔI, P) − Y(I, P))  ≤  τ_pay
+develop  iff   W(I + ΔI, P_f) − W(I, P_f)  ≥  0,      P_f = K
           and  b_c ≤ bank_c   for every color c
 ```
+
+- **The step is scored at the population the world will reach, not the one it
+  has.** The author ruled that the test reads forecast population; the horizon
+  is `K`, so a step is refused only if the world could never work it.
+- **There is no payback threshold above zero.** The ruling was to sweep one
+  first: a tolerance `k` (develop when the step's worked share is at least
+  `1/k`) lost worked output at every finite `k`, with or without a forecast.
+  Appendix §D.66 has the sweep.
+- **The test reads worked stock, not output.** Extraction and fabrication are
+  both monotone in `W`, so the sign of `ΔW` is the sign of `ΔY`.
+- **Within a Band segment `P_req ∝ I^1.5`**, so `W` falls as `P / √I` once a
+  world is understaffed: past that point a step lowers output. On the
+  1,500-yr bed 58–60% of the steps the test sees are Band III to IV on worlds
+  whose `K` can never fully staff them (appendix §D.66).
 
 - **Minerals are the bill, and the bill is per color.** §6.19c counted it: of
   all declined deepen decisions, **0%** are gated at the ceiling, **0.7–0.9%**
@@ -566,7 +584,8 @@ develop  iff   ΔI / (Y(I + ΔI, P) − Y(I, P))  ≤  τ_pay
 >   every homeworld (population and infrastructure both at Band 2), so a
 >   homeworld at `t = 0` is exactly staffed and nothing moves at the reference
 >   state; `a_homeworld_starts_exactly_staffed_and_losing_people_unstaffs_it`
->   pins it. **`u`'s shape (linear, clamped) stays open under R-IND22.**
+>   pins it. **`u`'s shape is ratified linear and clamped** (R-IND22, the
+>   author's ruling of 2026-11-01).
 > - **Why on (T-125):** off, population is not a factor of production and no
 >   Growth card can reach its own tree's stock. It moves every baseline —
 >   stock-weighted `u` averages 0.63–0.68 on the bed — and every measurement
@@ -578,9 +597,9 @@ develop  iff   ΔI / (Y(I + ΔI, P) − Y(I, P))  ≤  τ_pay
 >   **with the color conjunction ablated** it reads **+0.121 ± 0.015 (t 8.2)**.
 >   That framed R-IND23, now resolved: the author turned staffing on and kept
 >   the per-color bill, and the Growth card's multiplier carries the rest.
-> - **§1.8's profitability test (T-108) is still unwritten.** With the switch
->   on the autopilot deepens without regard to staffing, and at 600 yr 70%
->   of standing stock is idle.
+> - **§1.8's profitability test landed at T-108**, on by default. Before it the
+>   autopilot deepened without regard to staffing, and at 600 yr 70% of
+>   standing stock was idle.
 
 `Sim::extraction_rate` (`src/sim.rs:4157`) and `Sim::berth_rate`
 (`src/sim.rs:4055`) each read exactly two things: `Factors::infra` and the
@@ -608,7 +627,7 @@ rather than a refinement:
   distinctive act is mechanically inert. Trees §6.1 is the rule that depends on
   this; it has nothing to gate until `Y` reads `P`.
 
-**The shape to add, proposed and not ratified.** §4.3's law already has the
+**The shape, ratified (R-IND22).** §4.3's law already has the
 right slot: `n` is *"miner hulls on station plus units of Infrastructure
 allocated to extraction"*, and staffing belongs beside it as a **utilization
 factor on the stock** rather than as a fourth additive capacity —
@@ -620,8 +639,8 @@ I_worked = I · u(P / P_req(I)),     u monotone, u(0) = 0, u(x ≥ 1) = 1
 with `P_req(I)` the population one unit of stock needs. Written this way the
 change is bounded above by the current behavior (`u ≤ 1`), so it can only
 remove output, which makes the first measurement a clean ablation against a
-known baseline. **`u`'s shape and `P_req`'s magnitude are R-IND22**, together
-with `τ_pay`. Note that §4.3's `β` crowding exponent is *not* this: crowding is
+known baseline. **`u` is linear and clamped, and `P_req` is the people mass at
+the stock's own Band reading** (a placeholder with a reason, above). Note that §4.3's `β` crowding exponent is *not* this: crowding is
 sublinearity in the number of workers on a fixed deposit, and this is whether
 there are workers at all.
 
@@ -3665,7 +3684,7 @@ artifact in place contaminates every later measurement.
 | ~~**R-O85**~~ | ~~Infrastructure is priced as if it were the scarce thing~~ — **resolved: it is not.** Post-R-O88 the ladder is **scale-free** — 0.555 kt/yr of output per kt of stock, a **1.8-year payback at every whole Band**. The bed banks 1,714,697 kt against a 19 kt whole Band and still sits at Band 1.442 with **none** at cap. Counted per decision: **0%** gated, **0.7–0.9%** outbid, **98.3%** cannot pay the bill — and **43.8–46.6% of all decisions hold the total and lack a color**. The constraint is **freight**, not price. See §6.19c; the work is T-76. | §6.19c |
 | ~~R-O85, as originally framed~~ | ~~Infrastructure is priced as if it were the scarce thing.~~ The step above the founding whole Band costs nine colonizers (0.9 kt vs 0.10 kt); `fabrication_rate` saturates by whole Band II so the 19-kt and 780-kt steps buy +0.017 and +0.001 kt/yr; and `slips` is pinned at **2** from whole Band I onward because `fab_cap / slip_throughput = 2`. So the 756-Band sink is real and priced out of reach. Every candidate fix moves an MC-tuned surface and needs ratification. | §6.18 |
 | ~~**R-IND21**~~ | ~~The mineral economy has no demand side~~ — **withdrawn, and it was the wrong diagnosis.** Colonies sit at Band 1.05 against a ceiling of 3.60 with **zero** at cap and 756 Bands unbuilt: the sink is enormous and Doctrine never asks for it. The cause was read as R-O68's dead deepen branch; §6.18 refined it — the branch is cold on its merits and the ladder is what prices the sink out (R-O85). | §6.17 |
-| **[R-IND22](https://github.com/dwindlehop-pixel/hyades-4x/issues/199)** | **The development profitability test's three unknowns** (§1.8, T-108/T-107): the staffing factor `u`'s shape, the population one unit of stock needs `P_req(I)`, and the payback horizon `τ_pay` the policy will accept. The *form* is proposed — `I_worked = I · u(P / P_req(I))` with `u ≤ 1`, so the first landing is an ablation against a known baseline — and nothing about its size is measured. Distinct from §4.3's `β`: crowding is sublinearity in workers on a fixed deposit, this is whether there are workers at all. | §1.8 |
+| ~~**[R-IND22](https://github.com/dwindlehop-pixel/hyades-4x/issues/199)**~~ | ~~The development profitability test's three unknowns~~ — **resolved** (T-108): `u` linear and clamped; the step is scored at `K`; a step is refused only if it lowers worked stock, with no threshold above zero. Appendix §D.66. | §1.8 |
 | ~~**R-IND23**~~ | ~~Does population reach work-years, and through which gate?~~ **Resolved by the author (T-125): staffing is on by default.** The per-color conjunction stays as ratified (T-73). With staffing on, the first Growth card reaches work-years through its multiplier; tuned to the author's 1.5–2.0x P92 target on the twelve-seat bed (appendix §D.4). The T-124 2x2 that framed the decision is appendix §D.3 | — | §1.8 |
 | **[R-IND18](https://github.com/dwindlehop-pixel/hyades-4x/issues/200)** | Magnitudes for the composed extraction law — `ε`, `β`, `VEINS_PER_BAND`, and how `cap_ext`/`half_ext` land on it. The *form* is decided (§4.3a); nothing about its size is measured. | §4.3a |
 | ~~**R-O74**~~ | ~~Founding settlers are conjured~~ — **resolved.** Settlers are debited from the founding center's population and the rest of the hold is loaded from its bank; a contested colonizer unloads both halves back home. | §1.7 |
