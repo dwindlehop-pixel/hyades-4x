@@ -145,8 +145,8 @@ fn run(seed: u64, arm: &Arm, play: bool) -> Sample {
     let sample = |sim: &Simulation, s: &mut Sample| {
         s.t.push(sim.clock());
         s.infra0.push(sim.tree_stock(0).1);
-        for i in 0..SEATS {
-            s.colonies[i].push(sim.tree_stock(i).0 as f64);
+        for (i, c) in s.colonies.iter_mut().enumerate().take(SEATS) {
+            c.push(sim.tree_stock(i).0 as f64);
         }
     };
     while sim.step() {

@@ -1239,7 +1239,7 @@ than a power spike.
 | **R-O95** | ~~can a hull be worse at freight, faster empty and slower laden at once?~~ **Answered: no, and the answer is an identity** — `a_empty / a_laden = 1 + C / M_dry`, exactly, at every configuration (§9.2, pinned by `sim::tests::the_acceleration_swing_is_the_cargo_efficiency`). What stays open is the **magnitude** the first Warfare card should take: the Contact colonizer class's drive fraction `φ`, which is blocked on T-97 making `φ` per-`Class` at all. Carried as **R-WAR4** (`Hyades_warfare_tree.md` §7.3) |
 
 **Pre-existing, depended on:** R-5 (full clock math), R-7/R-9 (round-1 cost
-numbers — now the *sole* throttle on breadth), R-C1, R-C2, R-C5, R-C7,
+numbers — now the *sole* throttle on breadth), ~~R-C1~~ **resolved (card contract §1.1)**, R-C2, R-C5, R-C7,
 R-M8, R-MC1 (deeper tiers), R-MC3b (arena harness), R-MX1 (does exchange
 pressure surface diegetically — it is the mineral leak channel), R-CG28,
 ~~R-G6 (merges with R-O8)~~ **resolved with R-O8**, R-A3 (merges with R-O27).

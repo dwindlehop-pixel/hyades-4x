@@ -224,6 +224,10 @@ pub const ARMED_FRONTIER_BLOCKADERS: usize = 128;
 
 /// A card's target. The closed set card §1 requires, and the reason the wire
 /// protocol can be fixed-width (net §0).
+///
+/// R-C1 ratified the set (card §1.1): every card takes exactly one target, of
+/// eight kinds — hex, set of hexes, empire, set of empires, hull class, ship
+/// role, mineral tier, or null. Two are built here: null and empire.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Target {
     /// Self or global — no referent needed.

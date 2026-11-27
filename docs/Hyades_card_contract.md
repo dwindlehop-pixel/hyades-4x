@@ -8,9 +8,36 @@
 **A card is `(costs, target)`. Playing it is: meet the costs, place it on a target. Nothing else.** Strategic play must stay this simple. Cards that demand **arbitrary input are verboten.**
 
 - **Forbidden:** free-numeric input ("send *how many* ships?"), freeform coordinates, "choose any N of M," sliders, or any choice whose option set is not small, finite, and enumerable from the theater state.
-- **Allowed targets** are drawn from a **determinable finite set**: `self/global`, one neighbor empire, one held hex, one frontier hex, all-future-production (self), a single finite menu (e.g., a bias vector ∈ {high-K, a hue, a heading, open space, mines}), or `none`.
+This is not only ergonomic; it is the precondition for §6–§7 (deterministic value, Monte-Carlo balance).
 
-This is not only ergonomic; it is the precondition for §6–§7 (deterministic value, Monte-Carlo balance). **R-C1:** ratify the closed list of legal `target_rule` kinds.
+### 1.1 `RATIFIED` · The closed list of target kinds (R-C1, the author's ruling)
+
+**Every card requires exactly one target, and the target is one item of exactly one of these kinds:**
+
+| # | `target_rule` kind | The referent |
+|---|---|---|
+| 1 | **hex** | one command-view hex |
+| 2 | **set of hexes** | several hexes, optionally constrained by **adjacent sides**, by **count**, or by both |
+| 3 | **empire** | one empire |
+| 4 | **set of empires** | several empires |
+| 5 | **hull class** | one class of hull |
+| 6 | **ship role** | one role of ships |
+| 7 | **mineral tier** | basic, super or apex |
+| 8 | **null** | no referent — the card acts on its player or globally |
+
+Three consequences, stated so they are not re-argued:
+
+- **One target per card, never two.** A card cannot take a recipient *and* a subject as two referents; the only multi-referent kinds are the two *sets*, and a set is one target. This is what R-P15 (politics §5.5) asked, and it now has an answer to work from.
+- **The list replaces the Rev 2 examples.** `self/global` and `none` are both **null**; "one held hex" and "one frontier hex" are **hex**, with held or frontier a card's legality rule over the hex rather than a separate kind; "all future production (self)" is **null**, since its referent is the card's own player. **Whether the old *finite menu* target (a bias vector ∈ {high-K, a hue, a heading, open space, mines}) survives is not on the ratified list** — see the reading below.
+- **A hex target is a third exception to "the simulation reads no hex"** (`AGENTS.md` §4, beside homeworld placement and `GalaxyConfig::kept_hexes`). The order carries a hex; the engine resolves it to the worlds and space inside it at the order's barrier, through `apply_orders`, the one inbound channel (design law #15).
+
+**Readings this record takes, pending the author's confirmation** (`OPEN` until confirmed):
+
+- **"Adjacent sides" constrains the set's shape**: the hexes must form a connected set, each sharing a side with another in it. **Count** is a number the *card* fixes, never one the player chooses — a player-chosen count is the free-numeric input §1 forbids.
+- **A hull class is a `HullType`** (`sim::HullType`), and **a ship role is a `Role`** (`sim::Role`).
+- **The finite-menu target is retired**: a card that biased expansion toward one of several options is a separate card per option, or targets a hex, set of hexes or mineral tier.
+
+What is built: `cards::Target` implements **null** (`Target::None`) and **empire** (`Target::Player`). The other six kinds have no engine representation yet, and the wire widths for all eight are **R-NET4**'s to set (netcode §4.2).
 
 ---
 
@@ -98,7 +125,7 @@ Until 1–4 exist, cards beyond round 1 can be *named and slotted* (saga beats) 
 ---
 
 ## 9. Ratification points
-- **[R-C1](https://github.com/dwindlehop-pixel/hyades-4x/issues/148)** closed list of legal `target_rule` kinds · **[R-C2](https://github.com/dwindlehop-pixel/hyades-4x/issues/149)** realization curves per order family · **[R-C3](https://github.com/dwindlehop-pixel/hyades-4x/issues/150)** scaling house-rules per tree · **[R-C4](https://github.com/dwindlehop-pixel/hyades-4x/issues/151)** lock the engine-efficiency example (magnitude/class/singleton) once hulls exist · **[R-C5](https://github.com/dwindlehop-pixel/hyades-4x/issues/152)** order precedence algebra · **[R-C6](https://github.com/dwindlehop-pixel/hyades-4x/issues/153)** `V` state-vector + exact-vs-estimator · **[R-C7](https://github.com/dwindlehop-pixel/hyades-4x/issues/154)** balance metrics + thresholds
+- ~~**[R-C1](https://github.com/dwindlehop-pixel/hyades-4x/issues/148)** closed list of legal `target_rule` kinds~~ — **resolved (§1.1)** · **[R-C2](https://github.com/dwindlehop-pixel/hyades-4x/issues/149)** realization curves per order family · **[R-C3](https://github.com/dwindlehop-pixel/hyades-4x/issues/150)** scaling house-rules per tree · **[R-C4](https://github.com/dwindlehop-pixel/hyades-4x/issues/151)** lock the engine-efficiency example (magnitude/class/singleton) once hulls exist · **[R-C5](https://github.com/dwindlehop-pixel/hyades-4x/issues/152)** order precedence algebra · **[R-C6](https://github.com/dwindlehop-pixel/hyades-4x/issues/153)** `V` state-vector + exact-vs-estimator · **[R-C7](https://github.com/dwindlehop-pixel/hyades-4x/issues/154)** balance metrics + thresholds
 
 ---
 
