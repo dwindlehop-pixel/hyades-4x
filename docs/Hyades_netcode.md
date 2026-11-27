@@ -72,8 +72,8 @@ those R-codes, this spec stands as written.*
 > - **B2 · No card system (T-31).** §4.2's payload is
 >   `card_id ‖ target_kind ‖ target_ref`; the engine has no cards, so `card_id`
 >   indexes nothing. This is the same blocker that already stalls roster
->   enforcement (T-25), and R-NET4's field widths are blocked behind R-C1 in any
->   case.
+>   enforcement (T-25), and R-NET4's field widths were blocked behind R-C1, which
+>   is now ratified (card contract §1.1).
 > - **B3 · No state digest (T-32).** §8.1 names seven leaves; **two of them have
 >   no engine representation at all** — `exchange_books` (matching.rs is built
 >   but not wired into `lib.rs`, T-01) and `counter_graph` (T-13). The other five
@@ -416,10 +416,14 @@ bundled — see [RFC 8032](https://www.rfc-editor.org/rfc/rfc8032) and the
 | `HAVE` | possession bitmaps: `have_commit: u32` ‖ `have_reveal: u32` ‖ `have_checkpoint: u32` ‖ zeros — **u32, not u16 (Rev 3): 16 bits cannot address 18 seats** |
 | `VERDICT_VOTE` | `subject_seat: u16` ‖ `verdict: u8` ‖ `evidence_round: u32` ‖ zeros — only under `HaltAndVote` policy |
 
-`target_kind` + `target_ref` is the encoding of card contract §1's target set
-(`self/global`, one neighbor empire, one held hex, one frontier hex, a menu selection,
-`none`). **R-NET4** — final field widths are blocked on **R-C1** (the closed list of legal
-`target_rule` kinds).
+`target_kind` + `target_ref` is the encoding of card contract §1.1's target set,
+ratified at R-C1: exactly one target per card, of eight kinds — a hex, a set of hexes
+(optionally constrained by adjacent sides, by count, or both), an empire, a set of empires,
+a hull class, a ship role, a mineral tier (basic/super/apex), or null. **R-NET4** — the
+final field widths — is no longer blocked: `target_kind` needs 3 bits for eight kinds, and
+the open question is whether a **set** of hexes or empires fits in `target_ref: u32` (an
+18-seat empire set is an 18-bit mask and fits; a hex set needs a bound on its size or an
+encoding as anchor + shape).
 
 **The card/target constraint is honored.** The only *game* content on the wire is `card_id`
 and the target pair. Everything else is envelope (session, seat, round, signature) or
@@ -897,7 +901,7 @@ Layered on top:
 | **R-NET1** | ~~Fog under full replication~~ — **closed (Rev 2):** the command layer presents perfect information; there is no fog to protect. Superseded by **R-NET13**. | — |
 | **R-NET2** | ~~Server relay vs. gossip~~ — **resolved (Rev 4):** no server relay; P2P gossip tier with capped ingress (§3.2) | — |
 | **R-NET3** | ~~12-seat cap~~ — **resolved (Rev 3):** 18 seats, degree-capped overlay (§3.1) | — |
-| **[R-NET4](https://github.com/dwindlehop-pixel/hyades-4x/issues/238)** | Frame payload field widths (`card_id`, `target_kind`/`target_ref`) | **R-C1** |
+| **[R-NET4](https://github.com/dwindlehop-pixel/hyades-4x/issues/238)** | Frame payload field widths (`card_id`, `target_kind`/`target_ref`) | — (~~R-C1~~ resolved, card contract §1.1) |
 | **[R-NET5](https://github.com/dwindlehop-pixel/hyades-4x/issues/239)** | Merkle leaf partition and checkpoint cadence | — |
 | **[R-NET6](https://github.com/dwindlehop-pixel/hyades-4x/issues/240)** | Does a defaulted/timed-out round consume the action or refund it? | R-2 (action economy) |
 | **[R-NET7](https://github.com/dwindlehop-pixel/hyades-4x/issues/241)** | Headless replay throughput vs. match length; snapshot-assisted catch-up needed? | — |

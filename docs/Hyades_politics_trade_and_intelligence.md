@@ -532,7 +532,12 @@ initiator.
 arguments** — a recipient and a subject. `cards::Target` is a closed set with room
 for exactly one referent, and the wire protocol's `target_kind`/`target_ref` pair
 is sized for one. Does `Target` need a two-referent variant, and does that push
-`target_ref` wider than R-NET4 assumes? Blocked on R-NET4 and R-C1.
+`target_ref` wider than R-NET4 assumes? Blocked on R-NET4. **R-C1 is ratified
+(card contract §1.1) and answers the first half: every card takes exactly one target**,
+so a two-referent variant is not legal. What remains is how this card is expressed
+within one target — a **set of empires** names both players but does not say which is
+the recipient, so the open question is whether the roles are fixed by the card (the
+player is always the recipient) or the card splits.
 
 ---
 
@@ -798,7 +803,7 @@ bed before anything switches on.**
 | [R-P9](https://github.com/dwindlehop-pixel/hyades-4x/issues/252) | strength of both counter-graph effects; is the risk premium bounded? | MC |
 | [R-P13](https://github.com/dwindlehop-pixel/hyades-4x/issues/253) | which stances may be written, by which tier, on which index | a design pass |
 | [R-P14](https://github.com/dwindlehop-pixel/hyades-4x/issues/254) | does an imposed stance decay? | MC |
-| [R-P15](https://github.com/dwindlehop-pixel/hyades-4x/issues/255) | does a two-referent `Target` widen `target_ref` past R-NET4? | R-NET4, R-C1 |
+| [R-P15](https://github.com/dwindlehop-pixel/hyades-4x/issues/255) | does a two-referent `Target` widen `target_ref` past R-NET4? (R-C1: one target per card, so not as two referents) | R-NET4 |
 | — | reputation decay rate on both models | MC |
 | — | λ is +0.002 on Expansion and −0.348 on Growth | the composite objective |
 | T-86 | default, interdiction, reputation (stage 6) | — |

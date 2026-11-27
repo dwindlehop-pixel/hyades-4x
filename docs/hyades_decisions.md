@@ -58,7 +58,7 @@ the issue.
 
 | Code | Issue | Question |
 |---|---|---|
-| R-C1 | [#148](https://github.com/dwindlehop-pixel/hyades-4x/issues/148) | Closed list of legal target_rule kinds |
+| R-C1 | [#148](https://github.com/dwindlehop-pixel/hyades-4x/issues/148) | ~~Closed list of legal target_rule kinds~~ — resolved (card contract §1.1) |
 | R-C2 | [#149](https://github.com/dwindlehop-pixel/hyades-4x/issues/149) | Realization curves per order family |
 | R-C3 | [#150](https://github.com/dwindlehop-pixel/hyades-4x/issues/150) | Scaling house-rules per tree |
 | R-C4 | [#151](https://github.com/dwindlehop-pixel/hyades-4x/issues/151) | Lock the engine-efficiency example (magnitude, class, singleton) once hulls exist |
