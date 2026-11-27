@@ -420,8 +420,8 @@ fn the_host_kicks_and_the_first_queued_spectator_takes_the_seat() {
     }
     let now = net.t;
     let link = net.clients[0].core.create(Params { seats: 3, ..quick() }, "host", now);
-    for c in 1..4 {
-        net.clients[c].core.open_link(&link, now).unwrap();
+    for client in net.clients.iter_mut().take(4).skip(1) {
+        client.core.open_link(&link, now).unwrap();
     }
     let mut joined = BTreeSet::new();
     // Join one at a time so the order of arrival is fixed: p1, p2 seated, p3 queued.

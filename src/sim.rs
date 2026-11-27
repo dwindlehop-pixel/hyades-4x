@@ -4083,8 +4083,7 @@ impl Simulation {
         }
 
         let mut player_entity = Vec::with_capacity(n);
-        for p in 0..n {
-            let hw_pid = galaxy.homeworlds[p];
+        for &hw_pid in galaxy.homeworlds.iter().take(n) {
             let home = planet_entity[hw_pid.0 as usize];
 
             let e = world.spawn();
@@ -11198,12 +11197,12 @@ impl Simulation {
                 c.held_away[p as usize][i] += m.get(col);
             }
         }
-        for p in 0..n {
+        for (p, room) in c.haul_room.iter_mut().enumerate().take(n) {
             for o in self.worked_outposts(PlayerId(p as u32)) {
                 for (i, &col) in Material::ALL.iter().enumerate() {
                     let r = self.delivery_room(p as u32, Entity(o), col);
                     if r.is_finite() {
-                        c.haul_room[p][i] += r;
+                        room[i] += r;
                     }
                 }
             }
